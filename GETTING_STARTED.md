@@ -1,8 +1,8 @@
 # Getting Started
 
-这个仓库现在还没有 iOS 工程文件。
+这个仓库已经包含可打开的 iOS 工程文件。
 
-要继续开发这个 App，你先做下面几件事。
+要在真机上跑通当前版本，你先做下面几件事。
 
 ## 你现在需要做的事
 
@@ -24,10 +24,23 @@ xcodebuild -version
    - 登录 Apple ID
    - 开启开发者模式
    - 用数据线连到这台 Mac
+6. 打开工程
+
+```bash
+open myAppleHealthyBridge.xcodeproj
+```
+
+7. 在 Xcode 中配置
+   - target `myAppleHealthyBridge`
+   - `Signing & Capabilities` 里设置 Team
+   - 确认 `HealthKit` capability 已开启
+8. 在 App 设置页填写服务端
+   - `Base URL`: 服务端根地址，例如 `http://192.168.31.66:18000`
+   - `API Token`: 默认可留空；只有服务端设置了 `INGEST_API_TOKEN` 才需要填写
 
 ## 为什么这几步是必须的
 
-- 没有完整 Xcode，当前机器不能创建和构建 iOS App
+- 没有完整 Xcode，当前机器不能构建和签名 iOS App
 - HealthKit 真机验证比模拟器更可靠
 - App 需要签名后才能装到手机上测试权限和同步流程
 
@@ -47,12 +60,12 @@ xcodebuild -version
 
 ## 我接下来会负责做什么
 
-等 Xcode 可用后，我会按这个顺序推进：
+当前仓库已经包含这些能力：
 
-1. 创建 SwiftUI iOS App 工程
-2. 接入 HealthKit entitlement 和权限申请
-3. 实现心率的 anchored query
-4. 实现 anchor 本地持久化
-5. 实现统一 JSON payload
-6. 实现可配置的 `/ingest` 上传
-7. 做一个最小设置页和手动同步按钮
+1. SwiftUI iOS App 工程
+2. HealthKit entitlement 和权限申请
+3. anchored query
+4. anchor 本地持久化
+5. 统一 JSON payload
+6. 可配置的 `/ingest` 上传
+7. 最小设置页和手动同步按钮
