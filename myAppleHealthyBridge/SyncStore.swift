@@ -6,11 +6,13 @@ final class SyncStore: ObservableObject {
     @Published private(set) var settings: SyncSettings
     @Published private(set) var lastSyncResult: SyncRunResult?
     @Published private(set) var healthAuthorizationState: HealthAuthorizationState
+    @Published private(set) var observerRuntimeState: ObserverRuntimeState
 
     private let defaults: UserDefaults
     private let settingsKey = "sync.settings"
     private let resultKey = "sync.lastResult"
     private let healthAuthorizationKey = "health.authorization"
+    private let observerRuntimeKey = "sync.observerRuntime"
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -41,13 +43,23 @@ final class SyncStore: ObservableObject {
         } else {
             self.healthAuthorizationState = .default
         }
+
+        if
+            let data = defaults.data(forKey: observerRuntimeKey),
+            let state = try? JSONDecoder().decode(ObserverRuntimeState.self, from: data)
+        {
+            self.observerRuntimeState = state
+        } else {
+            self.observerRuntimeState = .default
+        }
     }
 
-    func updateSettings(baseURLString: String, apiToken: String, deviceID: String) {
+    func updateSettings(baseURLString: String, apiToken: String, deviceID: String, autoSyncEnabled: Bool) {
         settings = SyncSettings(
             baseURLString: baseURLString.trimmingCharacters(in: .whitespacesAndNewlines),
             apiToken: apiToken.trimmingCharacters(in: .whitespacesAndNewlines),
-            deviceID: deviceID.trimmingCharacters(in: .whitespacesAndNewlines)
+            deviceID: deviceID.trimmingCharacters(in: .whitespacesAndNewlines),
+            autoSyncEnabled: autoSyncEnabled
         )
         persist(settings, forKey: settingsKey)
     }
@@ -63,6 +75,23 @@ final class SyncStore: ObservableObject {
             lastRequestSucceeded: success
         )
         persist(healthAuthorizationState, forKey: healthAuthorizationKey)
+    }
+
+    func recordObserverState(
+        isEnabled: Bool,
+        observedTypeCount: Int,
+        lastTriggerAt: Date? = nil,
+        lastTriggerType: String? = nil,
+        lastErrorMessage: String? = nil
+    ) {
+        observerRuntimeState = ObserverRuntimeState(
+            isEnabled: isEnabled,
+            observedTypeCount: observedTypeCount,
+            lastTriggerAt: lastTriggerAt ?? observerRuntimeState.lastTriggerAt,
+            lastTriggerType: lastTriggerType ?? observerRuntimeState.lastTriggerType,
+            lastErrorMessage: lastErrorMessage
+        )
+        persist(observerRuntimeState, forKey: observerRuntimeKey)
     }
 
     func anchor(for identifier: String) -> HKQueryAnchor? {

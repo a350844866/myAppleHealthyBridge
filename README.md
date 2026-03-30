@@ -6,11 +6,69 @@
 
 - SwiftUI iOS App 工程
 - HealthKit 权限申请
-- 心率、血氧、呼吸频率、步数、睡眠的 anchored query 读取
+- 一批高价值 HealthKit sample 的 anchored query 读取
+- 手动同步为默认模式，可选开启自动同步
 - `HKQueryAnchor` 本地持久化
 - 统一 JSON payload 编码
 - `/ingest` 上传客户端
 - 一个最小设置页和手动同步按钮
+
+当前优先支持这些类型：
+
+- `HKQuantityTypeIdentifierHeartRate`
+- `HKQuantityTypeIdentifierOxygenSaturation`
+- `HKQuantityTypeIdentifierRespiratoryRate`
+- `HKQuantityTypeIdentifierStepCount`
+- `HKQuantityTypeIdentifierActiveEnergyBurned`
+- `HKQuantityTypeIdentifierBasalEnergyBurned`
+- `HKQuantityTypeIdentifierDistanceWalkingRunning`
+- `HKQuantityTypeIdentifierWalkingSpeed`
+- `HKQuantityTypeIdentifierAppleExerciseTime`
+- `HKQuantityTypeIdentifierAppleStandTime`
+- `HKQuantityTypeIdentifierHeartRateVariabilitySDNN`
+- `HKQuantityTypeIdentifierRestingHeartRate`
+- `HKQuantityTypeIdentifierFlightsClimbed`
+- `HKQuantityTypeIdentifierDistanceCycling`
+- `HKQuantityTypeIdentifierDistanceSwimming`
+- `HKQuantityTypeIdentifierDistanceWheelchair`
+- `HKQuantityTypeIdentifierDistanceDownhillSnowSports`
+- `HKQuantityTypeIdentifierWalkingStepLength`
+- `HKQuantityTypeIdentifierWalkingAsymmetryPercentage`
+- `HKQuantityTypeIdentifierWalkingDoubleSupportPercentage`
+- `HKQuantityTypeIdentifierAppleWalkingSteadiness`
+- `HKQuantityTypeIdentifierWalkingHeartRateAverage`
+- `HKQuantityTypeIdentifierHeartRateRecoveryOneMinute`
+- `HKQuantityTypeIdentifierRunningSpeed`
+- `HKQuantityTypeIdentifierRunningStrideLength`
+- `HKQuantityTypeIdentifierRunningPower`
+- `HKQuantityTypeIdentifierRunningGroundContactTime`
+- `HKQuantityTypeIdentifierRunningVerticalOscillation`
+- `HKQuantityTypeIdentifierSwimmingStrokeCount`
+- `HKQuantityTypeIdentifierPushCount`
+- `HKQuantityTypeIdentifierEnvironmentalAudioExposure`
+- `HKQuantityTypeIdentifierHeadphoneAudioExposure`
+- `HKQuantityTypeIdentifierBodyMass`
+- `HKQuantityTypeIdentifierLeanBodyMass`
+- `HKQuantityTypeIdentifierHeight`
+- `HKQuantityTypeIdentifierBodyFatPercentage`
+- `HKQuantityTypeIdentifierVO2Max`
+- `HKQuantityTypeIdentifierTimeInDaylight`
+- `HKQuantityTypeIdentifierSixMinuteWalkTestDistance`
+- `HKQuantityTypeIdentifierAtrialFibrillationBurden`
+- `HKQuantityTypeIdentifierBodyTemperature`
+- `HKQuantityTypeIdentifierAppleSleepingWristTemperature`
+- `HKCategoryTypeIdentifierSleepAnalysis`
+- `HKCategoryTypeIdentifierAudioExposureEvent`
+- `HKCategoryTypeIdentifierHandwashingEvent`
+- `HKCategoryTypeIdentifierHighHeartRateEvent`
+- `HKCategoryTypeIdentifierLowHeartRateEvent`
+- `HKCategoryTypeIdentifierIrregularHeartRhythmEvent`
+- `HKCategoryTypeIdentifierLowCardioFitnessEvent`
+
+说明：
+
+- 实际可读到哪些类型，仍取决于 iPhone / Apple Watch 是否产生过这类数据，以及系统版本是否支持该 identifier
+- 当前代码会在运行时探测类型；如果某个 identifier 当前系统不支持，会自动跳过，而不是直接崩溃
 
 ## 打开方式
 
@@ -36,6 +94,10 @@ open myAppleHealthyBridge.xcodeproj
   - 默认可以留空
   - 只有服务端设置了 `INGEST_API_TOKEN` 时才需要填写
   - 这里填 token 原文，不要手动加 `Bearer `
+- `Enable Auto Sync`
+  - 默认建议关闭
+  - 调试期间先手动同步
+  - 后期稳定后再打开自动同步
 
 当前客户端会自动请求：
 
@@ -58,7 +120,7 @@ POST http://192.168.31.66:18000/ingest
 
 ## 当前限制
 
-- 还没有 `HKObserverQuery`
-- 还没有后台任务补偿同步
+- 自动同步依赖 `HKObserverQuery`，但还没有后台任务补偿同步
 - 还没有 workout 支持
-- `/ingest` 仍然依赖你的服务端后续实现
+- `HKQuantityTypeIdentifierPhysicalEffort`、`HKQuantityTypeIdentifierBodyMassIndex` 等单位或口径还需要单独确认
+- 相关性对象、临床记录、workout 明细暂时还没有走当前 `/ingest` payload

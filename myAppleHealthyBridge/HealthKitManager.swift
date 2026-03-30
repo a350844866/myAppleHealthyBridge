@@ -7,17 +7,71 @@ struct AnchoredSamplesResult {
 }
 
 final class HealthKitManager {
-    private let store = HKHealthStore()
+    private struct QuantityTypeSpec {
+        let identifier: String
+        let unit: HKUnit
+    }
 
-    private let quantityTypes: [(identifier: HKQuantityTypeIdentifier, unit: HKUnit)] = [
-        (.heartRate, HKUnit.count().unitDivided(by: .minute())),
-        (.oxygenSaturation, HKUnit.percent()),
-        (.respiratoryRate, HKUnit.count().unitDivided(by: .minute())),
-        (.stepCount, HKUnit.count())
+    private struct CategoryTypeSpec {
+        let identifier: String
+    }
+
+    private let store = HKHealthStore()
+    private var observerQueries: [String: HKObserverQuery] = [:]
+
+    private let quantityTypeSpecs: [QuantityTypeSpec] = [
+        .init(identifier: "HKQuantityTypeIdentifierHeartRate", unit: HKUnit.count().unitDivided(by: .minute())),
+        .init(identifier: "HKQuantityTypeIdentifierOxygenSaturation", unit: HKUnit.percent()),
+        .init(identifier: "HKQuantityTypeIdentifierRespiratoryRate", unit: HKUnit.count().unitDivided(by: .minute())),
+        .init(identifier: "HKQuantityTypeIdentifierStepCount", unit: HKUnit.count()),
+        .init(identifier: "HKQuantityTypeIdentifierActiveEnergyBurned", unit: .kilocalorie()),
+        .init(identifier: "HKQuantityTypeIdentifierBasalEnergyBurned", unit: .kilocalorie()),
+        .init(identifier: "HKQuantityTypeIdentifierDistanceWalkingRunning", unit: .meter()),
+        .init(identifier: "HKQuantityTypeIdentifierWalkingSpeed", unit: HKUnit.meter().unitDivided(by: .second())),
+        .init(identifier: "HKQuantityTypeIdentifierAppleExerciseTime", unit: .minute()),
+        .init(identifier: "HKQuantityTypeIdentifierAppleStandTime", unit: .minute()),
+        .init(identifier: "HKQuantityTypeIdentifierHeartRateVariabilitySDNN", unit: .secondUnit(with: .milli)),
+        .init(identifier: "HKQuantityTypeIdentifierRestingHeartRate", unit: HKUnit.count().unitDivided(by: .minute())),
+        .init(identifier: "HKQuantityTypeIdentifierWalkingHeartRateAverage", unit: HKUnit.count().unitDivided(by: .minute())),
+        .init(identifier: "HKQuantityTypeIdentifierHeartRateRecoveryOneMinute", unit: HKUnit.count().unitDivided(by: .minute())),
+        .init(identifier: "HKQuantityTypeIdentifierFlightsClimbed", unit: .count()),
+        .init(identifier: "HKQuantityTypeIdentifierDistanceCycling", unit: .meter()),
+        .init(identifier: "HKQuantityTypeIdentifierDistanceSwimming", unit: .meter()),
+        .init(identifier: "HKQuantityTypeIdentifierDistanceWheelchair", unit: .meter()),
+        .init(identifier: "HKQuantityTypeIdentifierDistanceDownhillSnowSports", unit: .meter()),
+        .init(identifier: "HKQuantityTypeIdentifierWalkingStepLength", unit: .meter()),
+        .init(identifier: "HKQuantityTypeIdentifierSixMinuteWalkTestDistance", unit: .meter()),
+        .init(identifier: "HKQuantityTypeIdentifierRunningSpeed", unit: HKUnit.meter().unitDivided(by: .second())),
+        .init(identifier: "HKQuantityTypeIdentifierRunningStrideLength", unit: .meter()),
+        .init(identifier: "HKQuantityTypeIdentifierRunningPower", unit: .watt()),
+        .init(identifier: "HKQuantityTypeIdentifierRunningGroundContactTime", unit: .secondUnit(with: .milli)),
+        .init(identifier: "HKQuantityTypeIdentifierRunningVerticalOscillation", unit: .meterUnit(with: .milli)),
+        .init(identifier: "HKQuantityTypeIdentifierSwimmingStrokeCount", unit: .count()),
+        .init(identifier: "HKQuantityTypeIdentifierPushCount", unit: .count()),
+        .init(identifier: "HKQuantityTypeIdentifierEnvironmentalAudioExposure", unit: .decibelAWeightedSoundPressureLevel()),
+        .init(identifier: "HKQuantityTypeIdentifierHeadphoneAudioExposure", unit: .decibelAWeightedSoundPressureLevel()),
+        .init(identifier: "HKQuantityTypeIdentifierBodyMass", unit: .gramUnit(with: .kilo)),
+        .init(identifier: "HKQuantityTypeIdentifierLeanBodyMass", unit: .gramUnit(with: .kilo)),
+        .init(identifier: "HKQuantityTypeIdentifierHeight", unit: .meter()),
+        .init(identifier: "HKQuantityTypeIdentifierBodyFatPercentage", unit: .percent()),
+        .init(identifier: "HKQuantityTypeIdentifierVO2Max", unit: HKUnit.literUnit(with: .milli).unitDivided(by: .gramUnit(with: .kilo)).unitDivided(by: .minute())),
+        .init(identifier: "HKQuantityTypeIdentifierTimeInDaylight", unit: .minute()),
+        .init(identifier: "HKQuantityTypeIdentifierWalkingAsymmetryPercentage", unit: .percent()),
+        .init(identifier: "HKQuantityTypeIdentifierWalkingDoubleSupportPercentage", unit: .percent()),
+        .init(identifier: "HKQuantityTypeIdentifierAppleWalkingSteadiness", unit: .percent()),
+        .init(identifier: "HKQuantityTypeIdentifierAtrialFibrillationBurden", unit: .percent()),
+        .init(identifier: "HKQuantityTypeIdentifierBodyTemperature", unit: .degreeCelsius()),
+        .init(identifier: "HKQuantityTypeIdentifierAppleSleepingWristTemperature", unit: .degreeCelsius())
     ]
 
-    private let categoryTypes: [HKCategoryTypeIdentifier] = [
-        .sleepAnalysis
+    private let categoryTypeSpecs: [CategoryTypeSpec] = [
+        .init(identifier: "HKCategoryTypeIdentifierSleepAnalysis"),
+        .init(identifier: "HKCategoryTypeIdentifierAudioExposureEvent"),
+        .init(identifier: "HKCategoryTypeIdentifierHandwashingEvent"),
+        .init(identifier: "HKCategoryTypeIdentifierHighHeartRateEvent"),
+        .init(identifier: "HKCategoryTypeIdentifierLowHeartRateEvent"),
+        .init(identifier: "HKCategoryTypeIdentifierIrregularHeartRhythmEvent"),
+        .init(identifier: "HKCategoryTypeIdentifierLowCardioFitnessEvent")
     ]
 
     func isHealthDataAvailable() -> Bool {
@@ -61,28 +115,26 @@ final class HealthKitManager {
     }
 
     var supportedTypeIdentifiers: [String] {
-        quantityTypes.map(\.identifier.rawValue) + categoryTypes.map(\.rawValue)
+        resolvedQuantityTypes.map(\.spec.identifier) + resolvedCategoryTypes.map(\.spec.identifier)
     }
 
     func fetchAllAnchoredSamples(anchors: [String: HKQueryAnchor?]) async throws -> [String: AnchoredSamplesResult] {
         var results: [String: AnchoredSamplesResult] = [:]
 
-        for (identifier, unit) in quantityTypes {
-            let key = identifier.rawValue
-            let type = try requireQuantityType(identifier)
+        for entry in resolvedQuantityTypes {
+            let key = entry.spec.identifier
             results[key] = try await fetchQuantitySamples(
-                type: type,
+                type: entry.type,
                 typeIdentifier: key,
-                unit: unit,
+                unit: entry.spec.unit,
                 anchor: anchors[key] ?? nil
             )
         }
 
-        for identifier in categoryTypes {
-            let key = identifier.rawValue
-            let type = try requireCategoryType(identifier)
+        for entry in resolvedCategoryTypes {
+            let key = entry.spec.identifier
             results[key] = try await fetchCategorySamples(
-                type: type,
+                type: entry.type,
                 typeIdentifier: key,
                 anchor: anchors[key] ?? nil
             )
@@ -90,10 +142,84 @@ final class HealthKitManager {
 
         return results
     }
+
+    func startObservers(onUpdate: @escaping @Sendable (String) -> Void) async throws -> Int {
+        let sampleEntries = resolvedSampleTypes
+        guard !sampleEntries.isEmpty else {
+            observerQueries.removeAll()
+            return 0
+        }
+
+        if observerQueries.count == sampleEntries.count {
+            return observerQueries.count
+        }
+
+        observerQueries.removeAll()
+
+        for entry in sampleEntries {
+            let query = HKObserverQuery(sampleType: entry.type, predicate: nil) { [weak self] _, completionHandler, error in
+                defer { completionHandler() }
+
+                guard self != nil else {
+                    return
+                }
+
+                if error == nil {
+                    onUpdate(entry.identifier)
+                }
+            }
+            observerQueries[entry.identifier] = query
+            store.execute(query)
+        }
+
+        for entry in sampleEntries {
+            try await enableBackgroundDelivery(for: entry.type)
+        }
+
+        return sampleEntries.count
+    }
+
+    func stopObservers() async {
+        let sampleEntries = resolvedSampleTypes
+
+        for query in observerQueries.values {
+            store.stop(query)
+        }
+        observerQueries.removeAll()
+
+        for entry in sampleEntries {
+            await disableBackgroundDelivery(for: entry.type)
+        }
+    }
     private var sampleTypes: [HKSampleType] {
-        let quantities = quantityTypes.compactMap { HKObjectType.quantityType(forIdentifier: $0.identifier) }
-        let categories = categoryTypes.compactMap { HKObjectType.categoryType(forIdentifier: $0) }
+        let quantities = resolvedQuantityTypes.map(\.type)
+        let categories = resolvedCategoryTypes.map(\.type)
         return quantities + categories
+    }
+
+    private var resolvedSampleTypes: [(identifier: String, type: HKSampleType)] {
+        resolvedQuantityTypes.map { ($0.spec.identifier, $0.type as HKSampleType) }
+        + resolvedCategoryTypes.map { ($0.spec.identifier, $0.type as HKSampleType) }
+    }
+
+    private var resolvedQuantityTypes: [(spec: QuantityTypeSpec, type: HKQuantityType)] {
+        quantityTypeSpecs.compactMap { spec in
+            let identifier = HKQuantityTypeIdentifier(rawValue: spec.identifier)
+            guard let type = HKObjectType.quantityType(forIdentifier: identifier) else {
+                return nil
+            }
+            return (spec, type)
+        }
+    }
+
+    private var resolvedCategoryTypes: [(spec: CategoryTypeSpec, type: HKCategoryType)] {
+        categoryTypeSpecs.compactMap { spec in
+            let identifier = HKCategoryTypeIdentifier(rawValue: spec.identifier)
+            guard let type = HKObjectType.categoryType(forIdentifier: identifier) else {
+                return nil
+            }
+            return (spec, type)
+        }
     }
 
     private func fetchQuantitySamples(
@@ -124,7 +250,7 @@ final class HealthKitManager {
                         endAt: sample.endDate,
                         value: sample.quantity.doubleValue(for: unit),
                         unit: unit.unitString,
-                        metadata: Self.metadata(for: sample)
+                        metadata: Self.metadata(for: sample, kind: "quantity")
                     )
                 }
 
@@ -162,7 +288,7 @@ final class HealthKitManager {
                         endAt: sample.endDate,
                         value: Double(sample.value),
                         unit: nil,
-                        metadata: Self.metadata(for: sample)
+                        metadata: Self.metadata(for: sample, kind: "category", typeIdentifier: typeIdentifier, categoryValue: sample.value)
                     )
                 }
 
@@ -173,7 +299,12 @@ final class HealthKitManager {
         }
     }
 
-    private static func metadata(for sample: HKSample) -> [String: String] {
+    private static func metadata(
+        for sample: HKSample,
+        kind: String,
+        typeIdentifier: String? = nil,
+        categoryValue: Int? = nil
+    ) -> [String: String] {
         var values: [String: String] = [:]
 
         if let sourceRevision = sample.sourceRevision.source.bundleIdentifier as String? {
@@ -190,20 +321,128 @@ final class HealthKitManager {
             values["product_type"] = productType
         }
 
+        values["sample_kind"] = kind
+
+        if let device = sample.device {
+            if let name = device.name {
+                values["device_name"] = name
+            }
+            if let manufacturer = device.manufacturer {
+                values["device_manufacturer"] = manufacturer
+            }
+            if let model = device.model {
+                values["device_model"] = model
+            }
+            if let hardwareVersion = device.hardwareVersion {
+                values["device_hardware_version"] = hardwareVersion
+            }
+            if let firmwareVersion = device.firmwareVersion {
+                values["device_firmware_version"] = firmwareVersion
+            }
+            if let softwareVersion = device.softwareVersion {
+                values["device_software_version"] = softwareVersion
+            }
+            if let localIdentifier = device.localIdentifier {
+                values["device_local_identifier"] = localIdentifier
+            }
+            if let udiDeviceIdentifier = device.udiDeviceIdentifier {
+                values["device_udi"] = udiDeviceIdentifier
+            }
+        }
+
+        if let metadata = sample.metadata {
+            for (key, rawValue) in metadata {
+                let namespacedKey = "hk_metadata_\(key)"
+                values[namespacedKey] = stringifyMetadataValue(rawValue)
+            }
+        }
+
+        if let typeIdentifier, let categoryValue {
+            values["category_value_raw"] = String(categoryValue)
+            values["category_value_label"] = categoryValueLabel(for: typeIdentifier, value: categoryValue)
+        }
+
         return values
     }
 
-    private func requireQuantityType(_ identifier: HKQuantityTypeIdentifier) throws -> HKQuantityType {
-        guard let type = HKObjectType.quantityType(forIdentifier: identifier) else {
-            throw SyncError.unsupportedSampleType(identifier.rawValue)
+    private static func categoryValueLabel(for typeIdentifier: String, value: Int) -> String {
+        switch typeIdentifier {
+        case "HKCategoryTypeIdentifierSleepAnalysis":
+            switch value {
+            case 0:
+                return "HKCategoryValueSleepAnalysisInBed"
+            case 1:
+                return "HKCategoryValueSleepAnalysisAsleepUnspecified"
+            case 2:
+                return "HKCategoryValueSleepAnalysisAwake"
+            case 3:
+                return "HKCategoryValueSleepAnalysisAsleepCore"
+            case 4:
+                return "HKCategoryValueSleepAnalysisAsleepDeep"
+            case 5:
+                return "HKCategoryValueSleepAnalysisAsleepREM"
+            default:
+                return "raw_\(value)"
+            }
+        case "HKCategoryTypeIdentifierAudioExposureEvent":
+            switch value {
+            case 1:
+                return "HKCategoryValueAudioExposureEventLoudEnvironment"
+            default:
+                return "raw_\(value)"
+            }
+        case "HKCategoryTypeIdentifierHandwashingEvent":
+            return "raw_\(value)"
+        case "HKCategoryTypeIdentifierHighHeartRateEvent":
+            return "raw_\(value)"
+        case "HKCategoryTypeIdentifierLowHeartRateEvent":
+            return "raw_\(value)"
+        case "HKCategoryTypeIdentifierIrregularHeartRhythmEvent":
+            return "raw_\(value)"
+        case "HKCategoryTypeIdentifierLowCardioFitnessEvent":
+            return "raw_\(value)"
+        default:
+            return "raw_\(value)"
         }
-        return type
     }
 
-    private func requireCategoryType(_ identifier: HKCategoryTypeIdentifier) throws -> HKCategoryType {
-        guard let type = HKObjectType.categoryType(forIdentifier: identifier) else {
-            throw SyncError.unsupportedSampleType(identifier.rawValue)
+    private static func stringifyMetadataValue(_ value: Any) -> String {
+        switch value {
+        case let string as String:
+            return string
+        case let number as NSNumber:
+            return number.stringValue
+        case let date as Date:
+            return ISO8601DateFormatter().string(from: date)
+        case let quantity as HKQuantity:
+            return quantity.description
+        default:
+            return String(describing: value)
         }
-        return type
+    }
+
+    private func enableBackgroundDelivery(for sampleType: HKSampleType) async throws {
+        try await withCheckedThrowingContinuation { continuation in
+            store.enableBackgroundDelivery(for: sampleType, frequency: .immediate) { success, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                if success {
+                    continuation.resume()
+                } else {
+                    continuation.resume(throwing: SyncError.observerRegistrationFailed)
+                }
+            }
+        }
+    }
+
+    private func disableBackgroundDelivery(for sampleType: HKSampleType) async {
+        await withCheckedContinuation { continuation in
+            store.disableBackgroundDelivery(for: sampleType) { _, _ in
+                continuation.resume()
+            }
+        }
     }
 }

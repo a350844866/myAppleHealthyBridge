@@ -4,12 +4,36 @@ struct SyncSettings: Codable, Equatable {
     var baseURLString: String
     var apiToken: String
     var deviceID: String
+    var autoSyncEnabled: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case baseURLString
+        case apiToken
+        case deviceID
+        case autoSyncEnabled
+    }
 
     static let `default` = SyncSettings(
         baseURLString: "",
         apiToken: "",
-        deviceID: UUID().uuidString
+        deviceID: UUID().uuidString,
+        autoSyncEnabled: false
     )
+
+    init(baseURLString: String, apiToken: String, deviceID: String, autoSyncEnabled: Bool) {
+        self.baseURLString = baseURLString
+        self.apiToken = apiToken
+        self.deviceID = deviceID
+        self.autoSyncEnabled = autoSyncEnabled
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.baseURLString = try container.decode(String.self, forKey: .baseURLString)
+        self.apiToken = try container.decode(String.self, forKey: .apiToken)
+        self.deviceID = try container.decode(String.self, forKey: .deviceID)
+        self.autoSyncEnabled = try container.decodeIfPresent(Bool.self, forKey: .autoSyncEnabled) ?? false
+    }
 }
 
 struct SyncRunResult: Codable, Equatable {
@@ -25,6 +49,22 @@ struct HealthAuthorizationState: Codable, Equatable {
     static let `default` = HealthAuthorizationState(
         hasRequestedAccess: false,
         lastRequestSucceeded: false
+    )
+}
+
+struct ObserverRuntimeState: Codable, Equatable {
+    var isEnabled: Bool
+    var observedTypeCount: Int
+    var lastTriggerAt: Date?
+    var lastTriggerType: String?
+    var lastErrorMessage: String?
+
+    static let `default` = ObserverRuntimeState(
+        isEnabled: false,
+        observedTypeCount: 0,
+        lastTriggerAt: nil,
+        lastTriggerType: nil,
+        lastErrorMessage: nil
     )
 }
 

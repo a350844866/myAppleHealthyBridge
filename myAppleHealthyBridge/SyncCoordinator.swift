@@ -6,6 +6,7 @@ enum SyncError: LocalizedError {
     case invalidBaseURL
     case invalidServerResponse
     case missingBundleIdentifier
+    case observerRegistrationFailed
     case serverRejected(String)
     case unsupportedSampleType(String)
 
@@ -19,6 +20,8 @@ enum SyncError: LocalizedError {
             return "Server response could not be parsed."
         case .missingBundleIdentifier:
             return "Bundle identifier is missing."
+        case .observerRegistrationFailed:
+            return "HealthKit observer registration failed."
         case .serverRejected(let message):
             return "Server rejected sync: \(message)"
         case .unsupportedSampleType(let identifier):
@@ -48,7 +51,7 @@ final class SyncCoordinator: ObservableObject {
             healthDataAvailable: healthKitManager.isHealthDataAvailable(),
             authorizationState: syncStore.healthAuthorizationState
         )
-        observerStateText = "Disabled"
+        observerStateText = Self.makeObserverText(settings: syncStore.settings, runtimeState: syncStore.observerRuntimeState)
     }
 
     func start() async {
@@ -62,7 +65,8 @@ final class SyncCoordinator: ObservableObject {
             healthDataAvailable: true,
             authorizationState: syncStore.healthAuthorizationState
         )
-        observerStateText = "Disabled"
+        observerStateText = Self.makeObserverText(settings: syncStore.settings, runtimeState: syncStore.observerRuntimeState)
+        await refreshObserverRegistration()
     }
 
     func requestAuthorization() async {
@@ -76,7 +80,7 @@ final class SyncCoordinator: ObservableObject {
                 healthDataAvailable: true,
                 authorizationState: syncStore.healthAuthorizationState
             )
-            observerStateText = "Disabled"
+            await refreshObserverRegistration()
             syncStore.record(
                 result: SyncRunResult(
                     timestamp: .now,
@@ -99,6 +103,95 @@ final class SyncCoordinator: ObservableObject {
     }
 
     func runManualSync() async {
+        await runSync(trigger: .manual, changedTypeIdentifier: nil)
+    }
+
+    func updateAutoSync(enabled: Bool) async {
+        await refreshObserverRegistration(forceAutoSyncEnabled: enabled)
+    }
+
+    private func refreshObserverRegistration(forceAutoSyncEnabled: Bool? = nil) async {
+        guard healthKitManager.isHealthDataAvailable() else {
+            observerStateText = "Unavailable"
+            return
+        }
+
+        let autoSyncEnabled = forceAutoSyncEnabled ?? syncStore.settings.autoSyncEnabled
+        guard syncStore.healthAuthorizationState.lastRequestSucceeded else {
+            observerStateText = autoSyncEnabled ? "Waiting for HealthKit access" : "Disabled"
+            return
+        }
+
+        guard autoSyncEnabled else {
+            await healthKitManager.stopObservers()
+            syncStore.recordObserverState(isEnabled: false, observedTypeCount: 0, lastErrorMessage: nil)
+            observerStateText = "Disabled"
+            return
+        }
+
+        do {
+            let count = try await healthKitManager.startObservers { [weak self] identifier in
+                Task { [weak self] in
+                    await self?.handleObserverUpdate(identifier: identifier)
+                }
+            }
+            syncStore.recordObserverState(isEnabled: true, observedTypeCount: count, lastErrorMessage: nil)
+            observerStateText = Self.makeObserverText(settings: syncStore.settings, runtimeState: syncStore.observerRuntimeState)
+        } catch {
+            syncStore.recordObserverState(
+                isEnabled: false,
+                observedTypeCount: 0,
+                lastErrorMessage: error.localizedDescription
+            )
+            observerStateText = "Observer failed"
+            syncStore.record(
+                result: SyncRunResult(
+                    timestamp: .now,
+                    message: "Observer setup failed: \(error.localizedDescription)",
+                    success: false
+                )
+            )
+        }
+    }
+
+    private func handleObserverUpdate(identifier: String) async {
+        syncStore.recordObserverState(
+            isEnabled: true,
+            observedTypeCount: syncStore.observerRuntimeState.observedTypeCount,
+            lastTriggerAt: .now,
+            lastTriggerType: identifier,
+            lastErrorMessage: nil
+        )
+        observerStateText = Self.makeObserverText(settings: syncStore.settings, runtimeState: syncStore.observerRuntimeState)
+
+        guard syncStore.settings.autoSyncEnabled else {
+            observerStateText = "Observer ready / auto sync off"
+            return
+        }
+
+        if isSyncing {
+            observerStateText = "Change detected / waiting"
+            return
+        }
+
+        await runSync(trigger: .observer, changedTypeIdentifier: identifier)
+    }
+
+    private enum SyncTrigger {
+        case manual
+        case observer
+
+        var label: String {
+            switch self {
+            case .manual:
+                return "Manual"
+            case .observer:
+                return "Auto"
+            }
+        }
+    }
+
+    private func runSync(trigger: SyncTrigger, changedTypeIdentifier: String?) async {
         isSyncing = true
         defer { isSyncing = false }
 
@@ -138,16 +231,21 @@ final class SyncCoordinator: ObservableObject {
                 try syncStore.save(anchor: anchor, for: identifier)
             }
 
-            let message = "Sync completed. Uploaded \(items.count) items."
+            let triggerDetail = changedTypeIdentifier.map { " (\($0))" } ?? ""
+            let message = "\(trigger.label) sync completed\(triggerDetail). Uploaded \(items.count) items."
             syncStore.record(result: SyncRunResult(timestamp: .now, message: message, success: true))
+            observerStateText = Self.makeObserverText(settings: syncStore.settings, runtimeState: syncStore.observerRuntimeState)
         } catch {
             syncStore.record(
                 result: SyncRunResult(
                     timestamp: .now,
-                    message: error.localizedDescription,
+                    message: "\(trigger.label) sync failed: \(error.localizedDescription)",
                     success: false
                 )
             )
+            if case .observer = trigger {
+                observerStateText = "Observer sync failed"
+            }
         }
     }
 
@@ -176,5 +274,30 @@ final class SyncCoordinator: ObservableObject {
         }
 
         return authorizationState.lastRequestSucceeded ? "Authorized" : "Failed"
+    }
+
+    private static func makeObserverText(settings: SyncSettings, runtimeState: ObserverRuntimeState) -> String {
+        guard settings.autoSyncEnabled else {
+            return "Disabled"
+        }
+
+        guard runtimeState.isEnabled else {
+            if let lastErrorMessage = runtimeState.lastErrorMessage, !lastErrorMessage.isEmpty {
+                return "Failed"
+            }
+            return "Pending"
+        }
+
+        if let lastTriggerType = runtimeState.lastTriggerType {
+            return "Watching \(runtimeState.observedTypeCount) / last \(shortTypeName(lastTriggerType))"
+        }
+
+        return "Watching \(runtimeState.observedTypeCount)"
+    }
+
+    private static func shortTypeName(_ identifier: String) -> String {
+        identifier
+            .replacingOccurrences(of: "HKQuantityTypeIdentifier", with: "")
+            .replacingOccurrences(of: "HKCategoryTypeIdentifier", with: "")
     }
 }

@@ -6,6 +6,7 @@ struct ContentView: View {
     @State private var baseURL: String = ""
     @State private var apiToken: String = ""
     @State private var deviceID: String = ""
+    @State private var autoSyncEnabled = false
 
     var body: some View {
         NavigationStack {
@@ -14,7 +15,9 @@ struct ContentView: View {
                     LabeledContent("Availability", value: appState.syncCoordinator.authorizationStateText)
                     LabeledContent("Observer", value: appState.syncCoordinator.observerStateText)
 
-                    Text("This build uses manual sync only. If you already granted Health access, tapping again usually will not show a system popup.")
+                    Toggle("Enable Auto Sync", isOn: $autoSyncEnabled)
+
+                    Text("调试阶段建议先保持手动同步。只有打开自动同步后，App 才会注册 HealthKit observer 并在检测到变更时自动跑增量同步。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
@@ -44,8 +47,12 @@ struct ContentView: View {
                         appState.syncStore.updateSettings(
                             baseURLString: baseURL,
                             apiToken: apiToken,
-                            deviceID: deviceID
+                            deviceID: deviceID,
+                            autoSyncEnabled: autoSyncEnabled
                         )
+                        Task {
+                            await appState.syncCoordinator.updateAutoSync(enabled: autoSyncEnabled)
+                        }
                     }
                 }
 
@@ -89,6 +96,7 @@ struct ContentView: View {
                 baseURL = settings.baseURLString
                 apiToken = settings.apiToken
                 deviceID = settings.deviceID
+                autoSyncEnabled = settings.autoSyncEnabled
 
                 Task {
                     await appState.syncCoordinator.start()

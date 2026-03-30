@@ -37,6 +37,7 @@ open myAppleHealthyBridge.xcodeproj
 8. 在 App 设置页填写服务端
    - `Base URL`: 服务端根地址，例如 `http://192.168.31.66:18000`
    - `API Token`: 默认可留空；只有服务端设置了 `INGEST_API_TOKEN` 才需要填写
+   - `Enable Auto Sync`: 调试阶段先关闭，先用手动同步验证 payload 和服务端写入
 
 ## 为什么这几步是必须的
 
