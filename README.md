@@ -76,6 +76,12 @@
 open myAppleHealthyBridge.xcodeproj
 ```
 
+## 文档约定
+
+- 长期说明以本文件为准
+- 明天在 Mac 上接手时，先读 `MAC_CODEX_HANDOFF.md`
+- 旧的阶段性 handoff 文档已移除，避免继续按过期计划执行
+
 ## 首次运行前要做
 
 1. 在 Xcode 里选中 target `myAppleHealthyBridge`
