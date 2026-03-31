@@ -24,8 +24,6 @@ final class HealthKitManager {
 
     private let store = HKHealthStore()
     private var observerQueries: [String: HKObserverQuery] = [:]
-    private let maxSamplesPerTypePerSync = 200
-    private let maxSamplesPerSync = 1_000
 
     private let quantityTypeSpecs: [QuantityTypeSpec] = [
         .init(identifier: "HKQuantityTypeIdentifierHeartRate", unit: HKUnit.count().unitDivided(by: .minute())),
@@ -128,10 +126,12 @@ final class HealthKitManager {
 
     func fetchAllAnchoredSamples(
         anchors: [String: HKQueryAnchor?],
-        baselineStartAt: Date?
+        baselineStartAt: Date?,
+        maxPerType: Int = 200,
+        maxTotal: Int = 1_000
     ) async throws -> AnchoredFetchBatchResult {
         var results: [String: AnchoredSamplesResult] = [:]
-        var remainingSampleBudget = maxSamplesPerSync
+        var remainingSampleBudget = maxTotal
         var reachedSyncLimit = false
         let predicate = Self.predicate(forBaselineStartAt: baselineStartAt)
 
@@ -148,7 +148,7 @@ final class HealthKitManager {
                 unit: entry.spec.unit,
                 predicate: predicate,
                 anchor: anchors[key] ?? nil,
-                limit: min(maxSamplesPerTypePerSync, remainingSampleBudget)
+                limit: min(maxPerType, remainingSampleBudget)
             )
             results[key] = result
             remainingSampleBudget -= result.samples.count
@@ -167,7 +167,7 @@ final class HealthKitManager {
                 typeIdentifier: key,
                 predicate: predicate,
                 anchor: anchors[key] ?? nil,
-                limit: min(maxSamplesPerTypePerSync, remainingSampleBudget)
+                limit: min(maxPerType, remainingSampleBudget)
             )
             results[key] = result
             remainingSampleBudget -= result.samples.count

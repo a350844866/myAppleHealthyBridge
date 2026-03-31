@@ -13,6 +13,7 @@ struct ContentView: View {
         case startFromNow
         case manualSync
         case backfillLastWeek
+        case backfillHistory
     }
 
     @EnvironmentObject private var appState: AppState
@@ -149,24 +150,41 @@ struct ContentView: View {
                     }
                     .disabled(appState.syncCoordinator.isAuthorizing || appState.syncCoordinator.isSyncing || activeAction != nil)
 
-                    Button(activeAction == .backfillLastWeek || appState.syncCoordinator.isSyncing ? "上传中..." : "上传最近 7 天") {
+                    Button(activeAction == .backfillLastWeek || appState.syncCoordinator.isSyncing ? “上传中...” : “上传最近 7 天”) {
                         activeAction = .backfillLastWeek
                         Task {
                             await appState.syncCoordinator.uploadLast7Days()
                             activeAction = nil
                             presentResultAlert(
-                                fallbackTitle: "上传最近 7 天",
-                                fallbackMessage: "最近 7 天数据上传已完成。"
+                                fallbackTitle: “上传最近 7 天”,
+                                fallbackMessage: “最近 7 天数据上传已完成。”
                             )
                         }
                     }
                     .disabled(appState.syncCoordinator.isAuthorizing || appState.syncCoordinator.isSyncing || activeAction != nil)
 
-                    Text("没有本地或服务端游标时，手动同步不会再扫描全量历史。先点“恢复服务端游标”；如果服务端也没有游标，再点“从现在开始”。")
+                    Button(activeAction == .backfillHistory || appState.syncCoordinator.isSyncing
+                           ? (appState.syncCoordinator.backfillBatchCount > 0
+                              ? “回填中（第 \(appState.syncCoordinator.backfillBatchCount) 批）...”
+                              : “回填中...”)
+                           : “回填全部历史”) {
+                        activeAction = .backfillHistory
+                        Task {
+                            await appState.syncCoordinator.runBackfillHistory()
+                            activeAction = nil
+                            presentResultAlert(
+                                fallbackTitle: “全量历史回填”,
+                                fallbackMessage: “历史数据回填已完成。”
+                            )
+                        }
+                    }
+                    .disabled(appState.syncCoordinator.isAuthorizing || appState.syncCoordinator.isSyncing || activeAction != nil)
+
+                    Text(“没有本地或服务端游标时，手动同步不会再扫描全量历史。先点”恢复服务端游标”；如果服务端也没有游标，再点”从现在开始”。”)
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
-                    Text("“上传最近 7 天”是一次性历史回填，不会改写当前增量游标；适合在“从现在开始”之后补最近一周数据。")
+                    Text(“”上传最近 7 天”是一次性历史回填，不会改写当前增量游标；适合在”从现在开始”之后补最近一周数据。\n\n”回填全部历史”会分批上传 HealthKit 中所有历史记录（每批 5000 条），服务端自动去重已导入的数据。游标会随批次推进，可随时中断后续接着回填。”)
                         .font(.caption)
                         .foregroundStyle(.secondary)
 

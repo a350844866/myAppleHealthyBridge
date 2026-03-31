@@ -40,6 +40,7 @@ enum SyncError: LocalizedError {
 final class SyncCoordinator: ObservableObject {
     @Published private(set) var isAuthorizing = false
     @Published private(set) var isSyncing = false
+    @Published private(set) var backfillBatchCount = 0
     @Published private(set) var authorizationStateText = "未知"
     @Published private(set) var observerStateText = "已关闭"
     @Published private(set) var latestPayloadPreview = ""
@@ -150,6 +151,37 @@ final class SyncCoordinator: ObservableObject {
         }
 
         await runSync(trigger: .backfill, mode: .last7Days, changedTypeIdentifier: nil)
+    }
+
+    func runBackfillHistory() async {
+        guard !syncStore.settings.deviceID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            syncStore.record(result: SyncRunResult(
+                timestamp: .now,
+                message: SyncError.missingDeviceIdentifier.localizedDescription,
+                success: false
+            ))
+            return
+        }
+
+        isSyncing = true
+        backfillBatchCount = 0
+
+        syncStore.record(result: SyncRunResult(
+            timestamp: .now,
+            message: "开始全量历史回填。将分批上传所有 HealthKit 历史数据，服务端会自动去重已导入的记录。",
+            success: true
+        ))
+
+        while true {
+            backfillBatchCount += 1
+            let reachedLimit = await runBackfillBatch(batchNumber: backfillBatchCount)
+            if !reachedLimit { break }
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+        }
+
+        isSyncing = false
+        backfillBatchCount = 0
+        await runQueuedObserverSyncIfNeeded()
     }
 
     func updateAutoSync(enabled: Bool) async {
@@ -540,6 +572,85 @@ final class SyncCoordinator: ObservableObject {
         }
 
         return lines.joined(separator: "\n")
+    }
+
+    // Returns true if sync limit was reached and another batch should follow.
+    private func runBackfillBatch(batchNumber: Int) async -> Bool {
+        do {
+            let settings = syncStore.settings
+            let anchorMap: [String: HKQueryAnchor?] = Dictionary(
+                uniqueKeysWithValues: healthKitManager.supportedTypeIdentifiers.map {
+                    ($0, syncStore.anchor(for: $0))
+                }
+            )
+
+            let batch = try await healthKitManager.fetchAllAnchoredSamples(
+                anchors: anchorMap,
+                baselineStartAt: nil,
+                maxPerType: 500,
+                maxTotal: 5_000
+            )
+            let results = batch.results
+            let items = results.values.flatMap(\.samples).sorted { $0.startAt < $1.startAt }
+
+            guard let bundleID = Bundle.main.bundleIdentifier else {
+                throw SyncError.missingBundleIdentifier
+            }
+
+            let newAnchors = results.compactMapValues(\.newAnchor)
+            var encodedAnchors = syncStore.encodedAnchors(for: healthKitManager.supportedTypeIdentifiers)
+            for (identifier, anchor) in newAnchors {
+                encodedAnchors[identifier] = try syncStore.encodedString(for: anchor)
+            }
+
+            let payload = IngestPayload(
+                deviceID: settings.deviceID,
+                bundleID: bundleID,
+                sentAt: .now,
+                items: items,
+                anchors: encodedAnchors
+            )
+
+            latestPayloadPreview = makePayloadPreview(
+                payload,
+                modeLabel: "全量回填（第 \(batchNumber) 批）",
+                baselineStartAt: nil
+            )
+
+            // If no items fetched, we're done regardless of reachedSyncLimit
+            if items.isEmpty {
+                syncStore.record(result: SyncRunResult(
+                    timestamp: .now,
+                    message: "全量历史回填完成，共 \(batchNumber - 1) 批。",
+                    success: true
+                ))
+                return false
+            }
+
+            let response = try await ingestClient.post(payload: payload, settings: settings)
+
+            for (identifier, anchor) in newAnchors {
+                try syncStore.save(anchor: anchor, for: identifier)
+            }
+
+            let acceptedCount = response.accepted ?? items.count
+            let deduplicatedCount = response.deduplicated ?? 0
+            let contMsg = batch.reachedSyncLimit ? " 继续下一批..." : " 全部回填完成。"
+            syncStore.record(result: SyncRunResult(
+                timestamp: .now,
+                message: "全量回填第 \(batchNumber) 批完成。已上传 \(items.count) 条；服务端接受 \(acceptedCount) 条，去重 \(deduplicatedCount) 条。\(contMsg)",
+                success: true
+            ))
+
+            return batch.reachedSyncLimit
+        } catch {
+            syncStore.record(result: SyncRunResult(
+                timestamp: .now,
+                message: "全量回填第 \(batchNumber) 批失败：\(error.localizedDescription)",
+                success: false
+            ))
+            return false
+        }
     }
 
     private func runQueuedObserverSyncIfNeeded() async {
