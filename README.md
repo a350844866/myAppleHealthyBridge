@@ -94,13 +94,16 @@ open myAppleHealthyBridge.xcodeproj
 
 - `HKObserverQuery`
 - `enableBackgroundDelivery`
+- 后台 `URLSession uploadTask`
+- `BGTaskScheduler`
 
 这意味着它已经能在系统投递健康数据变更时自动触发同步，但仍有这些边界：
 
 - 不是完整的 `BGTaskScheduler` 补偿方案
 - 用户强杀应用后，不应假设还能继续稳定后台拉起
 - 系统可能延迟或合并 observer 回调
-- 目前没有“漏触发后的后台补偿重扫”
+- 后台同步会主动缩小单批负载，优先保证“后台能把一小批数据传出去”
+- 如果后台上传完成时本地游标还没来得及更新，下次启动会优先尝试从服务端恢复 anchor
 
 ## 最近同步数据页
 

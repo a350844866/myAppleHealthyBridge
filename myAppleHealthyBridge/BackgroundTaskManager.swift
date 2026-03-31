@@ -5,7 +5,7 @@ enum BackgroundTaskManager {
     static let refreshIdentifier = "com.example.myAppleHealthyBridge.sync-refresh"
     static let processingIdentifier = "com.example.myAppleHealthyBridge.sync-processing"
 
-    static func registerTasks(syncAction: @escaping () async -> Void) {
+    static func registerTasks(syncAction: @escaping () async -> Bool) {
         BGTaskScheduler.shared.register(
             forTaskWithIdentifier: refreshIdentifier,
             using: nil
@@ -23,28 +23,44 @@ enum BackgroundTaskManager {
         }
     }
 
-    static func scheduleRefresh() {
+    @discardableResult
+    static func scheduleRefresh() -> Bool {
+        BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: refreshIdentifier)
         let request = BGAppRefreshTaskRequest(identifier: refreshIdentifier)
         request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60) // 15 min
-        try? BGTaskScheduler.shared.submit(request)
+        do {
+            try BGTaskScheduler.shared.submit(request)
+            return true
+        } catch {
+            return false
+        }
     }
 
-    static func scheduleProcessing() {
+    @discardableResult
+    static func scheduleProcessing() -> Bool {
+        BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: processingIdentifier)
         let request = BGProcessingTaskRequest(identifier: processingIdentifier)
         request.earliestBeginDate = Date(timeIntervalSinceNow: 60 * 60) // 1 hour
         request.requiresNetworkConnectivity = true
         request.requiresExternalPower = false
-        try? BGTaskScheduler.shared.submit(request)
+        do {
+            try BGTaskScheduler.shared.submit(request)
+            return true
+        } catch {
+            return false
+        }
     }
 
-    static func scheduleAll() {
-        scheduleRefresh()
-        scheduleProcessing()
+    @discardableResult
+    static func scheduleAll() -> Bool {
+        let refreshOK = scheduleRefresh()
+        let processingOK = scheduleProcessing()
+        return refreshOK || processingOK
     }
 
     private static func handleRefreshTask(
         _ task: BGAppRefreshTask,
-        syncAction: @escaping () async -> Void
+        syncAction: @escaping () async -> Bool
     ) {
         // Schedule next refresh before doing work
         scheduleRefresh()
@@ -58,14 +74,14 @@ enum BackgroundTaskManager {
         }
 
         Task {
-            await syncTask.value
-            task.setTaskCompleted(success: true)
+            let success = await syncTask.value
+            task.setTaskCompleted(success: success)
         }
     }
 
     private static func handleProcessingTask(
         _ task: BGProcessingTask,
-        syncAction: @escaping () async -> Void
+        syncAction: @escaping () async -> Bool
     ) {
         // Schedule next processing task
         scheduleProcessing()
@@ -79,8 +95,8 @@ enum BackgroundTaskManager {
         }
 
         Task {
-            await syncTask.value
-            task.setTaskCompleted(success: true)
+            let success = await syncTask.value
+            task.setTaskCompleted(success: success)
         }
     }
 }

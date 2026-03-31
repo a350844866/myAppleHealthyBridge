@@ -54,6 +54,10 @@ final class SyncCoordinator: ObservableObject {
     private var retryTask: Task<Void, Never>?
     private var consecutiveFailures = 0
     private static let maxRetryDelay: UInt64 = 120_000_000_000 // 120s
+    private static let manualIncrementalBudget = SyncBudget(maxPerType: 200, maxTotal: 1_000)
+    private static let backgroundIncrementalBudget = SyncBudget(maxPerType: 40, maxTotal: 240)
+    private static let last7DaysBudget = SyncBudget(maxPerType: 120, maxTotal: 500)
+    private static let historyBackfillBudget = SyncBudget(maxPerType: 50, maxTotal: 200)
 
     init(healthKitManager: HealthKitManager, syncStore: SyncStore, ingestClient: IngestClient) {
         self.healthKitManager = healthKitManager
@@ -140,7 +144,12 @@ final class SyncCoordinator: ObservableObject {
             return
         }
 
-        await runSync(trigger: .manual, mode: .incremental, changedTypeIdentifier: nil)
+        _ = await runSync(
+            trigger: .manual,
+            mode: .incremental,
+            changedTypeIdentifier: nil,
+            budget: Self.manualIncrementalBudget
+        )
     }
 
     func uploadLast7Days() async {
@@ -155,7 +164,12 @@ final class SyncCoordinator: ObservableObject {
             return
         }
 
-        await runSync(trigger: .backfill, mode: .last7Days, changedTypeIdentifier: nil)
+        _ = await runSync(
+            trigger: .backfill,
+            mode: .last7Days,
+            changedTypeIdentifier: nil,
+            budget: Self.last7DaysBudget
+        )
     }
 
     func runBackfillHistory() async {
@@ -346,7 +360,12 @@ final class SyncCoordinator: ObservableObject {
             return
         }
 
-        await runSync(trigger: .observer, mode: .incremental, changedTypeIdentifier: identifier)
+        _ = await runSync(
+            trigger: .observer,
+            mode: .incremental,
+            changedTypeIdentifier: identifier,
+            budget: Self.backgroundIncrementalBudget
+        )
     }
 
     /// Called when app returns to foreground — catch up on any missed observer deliveries.
@@ -355,13 +374,23 @@ final class SyncCoordinator: ObservableObject {
         retryTask?.cancel()
         retryTask = nil
         consecutiveFailures = 0
-        await runSync(trigger: .observer, mode: .incremental, changedTypeIdentifier: "前台恢复")
+        _ = await runSync(
+            trigger: .observer,
+            mode: .incremental,
+            changedTypeIdentifier: "前台恢复",
+            budget: Self.backgroundIncrementalBudget
+        )
     }
 
     /// Called by BGTaskScheduler — periodic background sync to catch missed deliveries.
-    func handleBackgroundSync() async {
-        guard syncStore.settings.autoSyncEnabled, hasSyncCursor, !isSyncing else { return }
-        await runSync(trigger: .observer, mode: .incremental, changedTypeIdentifier: "后台定时")
+    func handleBackgroundSync() async -> Bool {
+        guard syncStore.settings.autoSyncEnabled, hasSyncCursor, !isSyncing else { return true }
+        return await runSync(
+            trigger: .backgroundTask,
+            mode: .incremental,
+            changedTypeIdentifier: "后台定时",
+            budget: Self.backgroundIncrementalBudget
+        )
     }
 
     private func scheduleRetry() {
@@ -378,12 +407,18 @@ final class SyncCoordinator: ObservableObject {
 
     private func executeRetry() async {
         guard syncStore.settings.autoSyncEnabled, hasSyncCursor, !isSyncing else { return }
-        await runSync(trigger: .observer, mode: .incremental, changedTypeIdentifier: "自动重试(\(consecutiveFailures))")
+        _ = await runSync(
+            trigger: .observer,
+            mode: .incremental,
+            changedTypeIdentifier: "自动重试(\(consecutiveFailures))",
+            budget: Self.backgroundIncrementalBudget
+        )
     }
 
     private enum SyncTrigger {
         case manual
         case observer
+        case backgroundTask
         case backfill
 
         var label: String {
@@ -392,10 +427,17 @@ final class SyncCoordinator: ObservableObject {
                 return "手动"
             case .observer:
                 return "自动"
+            case .backgroundTask:
+                return "后台"
             case .backfill:
                 return "回填"
             }
         }
+    }
+
+    private struct SyncBudget {
+        let maxPerType: Int
+        let maxTotal: Int
     }
 
     private enum SyncMode {
@@ -430,7 +472,13 @@ final class SyncCoordinator: ObservableObject {
         }
     }
 
-    private func runSync(trigger: SyncTrigger, mode: SyncMode, changedTypeIdentifier: String?) async {
+    @discardableResult
+    private func runSync(
+        trigger: SyncTrigger,
+        mode: SyncMode,
+        changedTypeIdentifier: String?,
+        budget: SyncBudget
+    ) async -> Bool {
         isSyncing = true
 
         do {
@@ -444,7 +492,9 @@ final class SyncCoordinator: ObservableObject {
 
             let batch = try await healthKitManager.fetchAllAnchoredSamples(
                 anchors: anchorMap,
-                baselineStartAt: baselineStartAt
+                baselineStartAt: baselineStartAt,
+                maxPerType: budget.maxPerType,
+                maxTotal: budget.maxTotal
             )
             let results = batch.results
             let items = results.values.flatMap(\.samples).sorted { $0.startAt < $1.startAt }
@@ -494,6 +544,9 @@ final class SyncCoordinator: ObservableObject {
             consecutiveFailures = 0
             retryTask?.cancel()
             retryTask = nil
+            isSyncing = false
+            await runQueuedObserverSyncIfNeeded()
+            return true
         } catch {
             syncStore.record(
                 result: SyncRunResult(
@@ -506,10 +559,14 @@ final class SyncCoordinator: ObservableObject {
                 observerStateText = "同步失败，将自动重试"
                 scheduleRetry()
             }
+            if case .backgroundTask = trigger {
+                observerStateText = "同步失败，将自动重试"
+                scheduleRetry()
+            }
+            isSyncing = false
+            await runQueuedObserverSyncIfNeeded()
+            return false
         }
-
-        isSyncing = false
-        await runQueuedObserverSyncIfNeeded()
     }
 
     private var hasSyncCursor: Bool {
@@ -643,8 +700,8 @@ final class SyncCoordinator: ObservableObject {
             let batch = try await healthKitManager.fetchAllAnchoredSamples(
                 anchors: anchorMap,
                 baselineStartAt: nil,
-                maxPerType: 50,
-                maxTotal: 200
+                maxPerType: Self.historyBackfillBudget.maxPerType,
+                maxTotal: Self.historyBackfillBudget.maxTotal
             )
             let results = batch.results
             let items = results.values.flatMap(\.samples).sorted { $0.startAt < $1.startAt }
@@ -764,7 +821,12 @@ final class SyncCoordinator: ObservableObject {
         }
 
         observerStateText = "正在处理排队中的变更"
-        await runSync(trigger: .observer, mode: .incremental, changedTypeIdentifier: changedTypeIdentifier)
+        _ = await runSync(
+            trigger: .observer,
+            mode: .incremental,
+            changedTypeIdentifier: changedTypeIdentifier,
+            budget: Self.backgroundIncrementalBudget
+        )
     }
 
     private static func makeAuthorizationText(

@@ -14,6 +14,18 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         }
         return true
     }
+
+    func application(
+        _ application: UIApplication,
+        handleEventsForBackgroundURLSession identifier: String,
+        completionHandler: @escaping () -> Void
+    ) {
+        if identifier == BackgroundIngestUploader.shared.session.configuration.identifier {
+            BackgroundIngestUploader.shared.setBackgroundEventsCompletionHandler(completionHandler)
+        } else {
+            completionHandler()
+        }
+    }
 }
 
 @main
@@ -34,7 +46,7 @@ struct myAppleHealthyBridgeApp: App {
             case .active:
                 Task { await appState.syncCoordinator.handleForegroundReturn() }
             case .background:
-                BackgroundTaskManager.scheduleAll()
+                _ = BackgroundTaskManager.scheduleAll()
             default:
                 break
             }
