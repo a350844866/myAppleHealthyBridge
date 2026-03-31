@@ -357,6 +357,12 @@ final class SyncCoordinator: ObservableObject {
         await runSync(trigger: .observer, mode: .incremental, changedTypeIdentifier: "前台恢复")
     }
 
+    /// Called by BGTaskScheduler — periodic background sync to catch missed deliveries.
+    func handleBackgroundSync() async {
+        guard syncStore.settings.autoSyncEnabled, hasSyncCursor, !isSyncing else { return }
+        await runSync(trigger: .observer, mode: .incremental, changedTypeIdentifier: "后台定时")
+    }
+
     private func scheduleRetry() {
         retryTask?.cancel()
         consecutiveFailures += 1

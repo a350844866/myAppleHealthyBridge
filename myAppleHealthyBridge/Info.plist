@@ -29,6 +29,16 @@
 		<key>UIApplicationSupportsMultipleScenes</key>
 		<false/>
 	</dict>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+		<string>processing</string>
+	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.example.myAppleHealthyBridge.sync-refresh</string>
+		<string>com.example.myAppleHealthyBridge.sync-processing</string>
+	</array>
 	<key>UILaunchScreen</key>
 	<dict/>
 </dict>
