@@ -15,23 +15,23 @@ enum SyncError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .healthDataUnavailable:
-            return "Health data is not available on this device."
+            return "当前设备不支持健康数据。"
         case .invalidBaseURL:
-            return "Please enter a valid server base URL."
+            return "请输入有效的服务端地址。"
         case .invalidServerResponse:
-            return "Server response could not be parsed."
+            return "服务端响应无法解析。"
         case .missingBundleIdentifier:
-            return "Bundle identifier is missing."
+            return "缺少应用包标识。"
         case .missingDeviceIdentifier:
-            return "Device ID is required."
+            return "设备编号不能为空。"
         case .observerRegistrationFailed:
-            return "HealthKit observer registration failed."
+            return "健康数据观察器注册失败。"
         case .serverRejected(let message):
-            return "Server rejected sync: \(message)"
+            return "服务端拒绝同步：\(message)"
         case .syncCursorNotInitialized:
-            return "No sync cursor found. Restore server anchors or tap Start From Now before syncing."
+            return "未找到同步游标。请先恢复服务端游标，或先点“从现在开始”，再执行同步。"
         case .unsupportedSampleType(let identifier):
-            return "Unsupported HealthKit type: \(identifier)"
+            return "不支持的健康数据类型：\(identifier)"
         }
     }
 }
@@ -40,8 +40,8 @@ enum SyncError: LocalizedError {
 final class SyncCoordinator: ObservableObject {
     @Published private(set) var isAuthorizing = false
     @Published private(set) var isSyncing = false
-    @Published private(set) var authorizationStateText = "Unknown"
-    @Published private(set) var observerStateText = "Disabled"
+    @Published private(set) var authorizationStateText = "未知"
+    @Published private(set) var observerStateText = "已关闭"
     @Published private(set) var latestPayloadPreview = ""
 
     private let healthKitManager: HealthKitManager
@@ -63,8 +63,8 @@ final class SyncCoordinator: ObservableObject {
 
     func start() async {
         guard healthKitManager.isHealthDataAvailable() else {
-            authorizationStateText = "Unavailable"
-            observerStateText = "Unavailable"
+            authorizationStateText = "不可用"
+            observerStateText = "不可用"
             return
         }
 
@@ -79,7 +79,7 @@ final class SyncCoordinator: ObservableObject {
             syncStore.record(
                 result: SyncRunResult(
                     timestamp: .now,
-                    message: "Cursor restore failed: \(error.localizedDescription)",
+                    message: "恢复同步游标失败：\(error.localizedDescription)",
                     success: false
                 )
             )
@@ -102,14 +102,14 @@ final class SyncCoordinator: ObservableObject {
             syncStore.record(
                 result: SyncRunResult(
                     timestamp: .now,
-                    message: "HealthKit access is available.",
+                    message: "健康数据权限已可用。",
                     success: true
                 )
             )
         } catch {
             syncStore.recordHealthAuthorizationRequested(success: false)
-            authorizationStateText = "Failed"
-            observerStateText = "Disabled"
+            authorizationStateText = "失败"
+            observerStateText = "已关闭"
             syncStore.record(
                 result: SyncRunResult(
                     timestamp: .now,
@@ -163,7 +163,7 @@ final class SyncCoordinator: ObservableObject {
                 syncStore.record(
                     result: SyncRunResult(
                         timestamp: .now,
-                        message: "No server anchors found for this Device ID. Use Start From Now to establish a new incremental cursor.",
+                        message: "这个设备编号在服务端没有同步游标。请使用“从现在开始”建立新的增量游标。",
                         success: false
                     )
                 )
@@ -173,7 +173,7 @@ final class SyncCoordinator: ObservableObject {
             syncStore.record(
                 result: SyncRunResult(
                     timestamp: .now,
-                    message: "Restore server anchors failed: \(error.localizedDescription)",
+                    message: "恢复服务端游标失败：\(error.localizedDescription)",
                     success: false
                 )
             )
@@ -184,11 +184,11 @@ final class SyncCoordinator: ObservableObject {
         let now = Date()
         clearLocalSyncCursor()
         syncStore.setBaselineStartAt(now)
-        latestPayloadPreview = "baseline_start_at: \(now.ISO8601Format())\nmode: start_from_now\nitems: 0"
+        latestPayloadPreview = "基线开始时间：\(now.ISO8601Format())\n同步模式：从现在开始\n样本数：0"
         syncStore.record(
             result: SyncRunResult(
                 timestamp: .now,
-                message: "Start From Now initialized. Future syncs will only include HealthKit samples whose start time is on or after \(now.formatted(date: .abbreviated, time: .standard)).",
+                message: "“从现在开始”已初始化。后续同步只会包含开始时间在 \(now.formatted(date: .abbreviated, time: .standard)) 及之后的健康数据样本。",
                 success: true
             )
         )
@@ -201,7 +201,7 @@ final class SyncCoordinator: ObservableObject {
         syncStore.record(
             result: SyncRunResult(
                 timestamp: .now,
-                message: "Device ID changed. Local anchors and Start From Now baseline were cleared. Restore server anchors or initialize Start From Now again.",
+                message: "设备编号已变更。本地同步游标和“从现在开始”基线已清空，请重新恢复服务端游标或重新初始化“从现在开始”。",
                 success: true
             )
         )
@@ -210,13 +210,13 @@ final class SyncCoordinator: ObservableObject {
 
     private func refreshObserverRegistration(forceAutoSyncEnabled: Bool? = nil) async {
         guard healthKitManager.isHealthDataAvailable() else {
-            observerStateText = "Unavailable"
+            observerStateText = "不可用"
             return
         }
 
         let autoSyncEnabled = forceAutoSyncEnabled ?? syncStore.settings.autoSyncEnabled
         guard syncStore.healthAuthorizationState.lastRequestSucceeded else {
-            observerStateText = autoSyncEnabled ? "Waiting for HealthKit access" : "Disabled"
+            observerStateText = autoSyncEnabled ? "等待健康数据权限" : "已关闭"
             return
         }
 
@@ -224,7 +224,7 @@ final class SyncCoordinator: ObservableObject {
             await healthKitManager.stopObservers()
             pendingObserverTypeIdentifiers.removeAll()
             syncStore.recordObserverState(isEnabled: false, observedTypeCount: 0, lastErrorMessage: nil)
-            observerStateText = "Disabled"
+            observerStateText = "已关闭"
             return
         }
 
@@ -236,12 +236,12 @@ final class SyncCoordinator: ObservableObject {
                 observedTypeCount: 0,
                 lastErrorMessage: error.localizedDescription
             )
-            observerStateText = "Observer failed"
+            observerStateText = "观察器失败"
             return
         }
 
         guard hasSyncCursor else {
-            observerStateText = "Needs cursor"
+            observerStateText = "需要游标"
             return
         }
 
@@ -261,11 +261,11 @@ final class SyncCoordinator: ObservableObject {
                 observedTypeCount: 0,
                 lastErrorMessage: error.localizedDescription
             )
-            observerStateText = "Observer failed"
+            observerStateText = "观察器失败"
             syncStore.record(
                 result: SyncRunResult(
                     timestamp: .now,
-                    message: "Observer setup failed: \(error.localizedDescription)",
+                    message: "观察器初始化失败：\(error.localizedDescription)",
                     success: false
                 )
             )
@@ -284,13 +284,13 @@ final class SyncCoordinator: ObservableObject {
 
         guard syncStore.settings.autoSyncEnabled else {
             pendingObserverTypeIdentifiers.removeAll()
-            observerStateText = "Observer ready / auto sync off"
+            observerStateText = "观察器已就绪 / 自动同步关闭"
             return
         }
 
         if isSyncing {
             pendingObserverTypeIdentifiers.insert(identifier)
-            observerStateText = "Change detected / queued"
+            observerStateText = "检测到变更 / 已排队"
             return
         }
 
@@ -305,11 +305,11 @@ final class SyncCoordinator: ObservableObject {
         var label: String {
             switch self {
             case .manual:
-                return "Manual"
+                return "手动"
             case .observer:
-                return "Auto"
+                return "自动"
             case .backfill:
-                return "Backfill"
+                return "回填"
             }
         }
     }
@@ -339,9 +339,9 @@ final class SyncCoordinator: ObservableObject {
         var previewLabel: String {
             switch self {
             case .incremental:
-                return "incremental"
+                return "增量"
             case .last7Days:
-                return "last_7_days"
+                return "最近7天"
             }
         }
     }
@@ -401,22 +401,22 @@ final class SyncCoordinator: ObservableObject {
             }
 
             let triggerDetail = changedTypeIdentifier.map { " (\($0))" } ?? ""
-            let batchDetail = batch.reachedSyncLimit ? " Batch capped to reduce memory use; run sync again to continue backfill." : ""
+            let batchDetail = batch.reachedSyncLimit ? " 本批次已封顶以控制内存占用；再次执行可继续回填。" : ""
             let acceptedCount = response.accepted ?? items.count
             let deduplicatedCount = response.deduplicated ?? 0
-            let message = "\(trigger.label) sync completed\(triggerDetail). Uploaded \(items.count) items; server accepted \(acceptedCount), deduplicated \(deduplicatedCount).\(batchDetail)"
+            let message = "\(trigger.label)同步完成\(triggerDetail)。已上传 \(items.count) 条；服务端接受 \(acceptedCount) 条，去重 \(deduplicatedCount) 条。\(batchDetail)"
             syncStore.record(result: SyncRunResult(timestamp: .now, message: message, success: true))
             observerStateText = Self.makeObserverText(settings: syncStore.settings, runtimeState: syncStore.observerRuntimeState)
         } catch {
             syncStore.record(
                 result: SyncRunResult(
                     timestamp: .now,
-                    message: "\(trigger.label) sync failed: \(error.localizedDescription)",
+                    message: "\(trigger.label)同步失败：\(error.localizedDescription)",
                     success: false
                 )
             )
             if case .observer = trigger {
-                observerStateText = "Observer sync failed"
+                observerStateText = "观察器同步失败"
             }
         }
 
@@ -480,7 +480,7 @@ final class SyncCoordinator: ObservableObject {
             syncStore.record(
                 result: SyncRunResult(
                     timestamp: .now,
-                    message: "Restored \(response.anchors.count) server anchors for Device ID \(deviceID).",
+                    message: "已为设备编号 \(deviceID) 恢复 \(response.anchors.count) 个服务端游标。",
                     success: true
                 )
             )
@@ -506,37 +506,37 @@ final class SyncCoordinator: ObservableObject {
         }
 
         var lines: [String] = [
-            "mode: \(modeLabel)",
-            "device_id: \(payload.deviceID)",
-            "bundle_id: \(payload.bundleID)",
-            "sent_at: \(payload.sentAt.ISO8601Format())",
-            "item_count: \(payload.items.count)",
-            "anchor_count: \(payload.anchors.count)",
-            "types: \(countsByType.count)"
+            "模式：\(modeLabel)",
+            "设备编号：\(payload.deviceID)",
+            "应用包标识：\(payload.bundleID)",
+            "发送时间：\(payload.sentAt.ISO8601Format())",
+            "样本数：\(payload.items.count)",
+            "游标数：\(payload.anchors.count)",
+            "类型数：\(countsByType.count)"
         ]
 
         if let baselineStartAt {
-            lines.append("baseline_start_at: \(baselineStartAt.ISO8601Format())")
+            lines.append("基线开始时间：\(baselineStartAt.ISO8601Format())")
         }
 
         if !countsByType.isEmpty {
-            lines.append("counts_by_type:")
+            lines.append("类型分布：")
             for (type, count) in countsByType.sorted(by: { $0.key < $1.key }) {
                 lines.append("- \(Self.shortTypeName(type)): \(count)")
             }
         }
 
         if !previewItems.isEmpty {
-            lines.append("preview_items:")
+            lines.append("预览样本：")
             for item in previewItems {
-                let valueText = item.value.map { String($0) } ?? "nil"
-                let unitText = item.unit ?? "nil"
-                lines.append("- \(Self.shortTypeName(item.type)) | \(item.startAt.ISO8601Format()) | value=\(valueText) | unit=\(unitText)")
+                let valueText = item.value.map { String($0) } ?? "空"
+                let unitText = item.unit ?? "空"
+                lines.append("- \(Self.shortTypeName(item.type)) | \(item.startAt.ISO8601Format()) | 数值=\(valueText) | 单位=\(unitText)")
             }
         }
 
         if payload.items.count > previewItems.count {
-            lines.append("preview_truncated: showing \(previewItems.count) of \(payload.items.count) items")
+            lines.append("预览已截断：当前展示 \(previewItems.count) / \(payload.items.count) 条")
         }
 
         return lines.joined(separator: "\n")
@@ -559,10 +559,10 @@ final class SyncCoordinator: ObservableObject {
         if queuedIdentifiers.count == 1 {
             changedTypeIdentifier = queuedIdentifiers.first
         } else {
-            changedTypeIdentifier = "\(queuedIdentifiers.count) pending types"
+            changedTypeIdentifier = "\(queuedIdentifiers.count) 个待处理类型"
         }
 
-        observerStateText = "Processing queued changes"
+        observerStateText = "正在处理排队中的变更"
         await runSync(trigger: .observer, mode: .incremental, changedTypeIdentifier: changedTypeIdentifier)
     }
 
@@ -571,33 +571,33 @@ final class SyncCoordinator: ObservableObject {
         authorizationState: HealthAuthorizationState
     ) -> String {
         guard healthDataAvailable else {
-            return "Unavailable"
+            return "不可用"
         }
 
         guard authorizationState.hasRequestedAccess else {
-            return "Ready"
+            return "就绪"
         }
 
-        return authorizationState.lastRequestSucceeded ? "Authorized" : "Failed"
+        return authorizationState.lastRequestSucceeded ? "已授权" : "失败"
     }
 
     private static func makeObserverText(settings: SyncSettings, runtimeState: ObserverRuntimeState) -> String {
         guard settings.autoSyncEnabled else {
-            return "Disabled"
+            return "已关闭"
         }
 
         guard runtimeState.isEnabled else {
             if let lastErrorMessage = runtimeState.lastErrorMessage, !lastErrorMessage.isEmpty {
-                return "Failed"
+                return "失败"
             }
-            return "Pending"
+            return "等待中"
         }
 
         if let lastTriggerType = runtimeState.lastTriggerType {
-            return "Watching \(runtimeState.observedTypeCount) / last \(shortTypeName(lastTriggerType))"
+            return "监听中 \(runtimeState.observedTypeCount) 个 / 最近 \(shortTypeName(lastTriggerType))"
         }
 
-        return "Watching \(runtimeState.observedTypeCount)"
+        return "监听中 \(runtimeState.observedTypeCount) 个"
     }
 
     private static func shortTypeName(_ identifier: String) -> String {

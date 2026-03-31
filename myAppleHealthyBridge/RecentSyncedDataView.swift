@@ -20,31 +20,31 @@ struct RecentSyncedDataView: View {
                 Section {
                     HStack {
                         ProgressView()
-                        Text("Loading recent synced records...")
+                        Text("正在加载最近同步数据...")
                             .foregroundStyle(.secondary)
                     }
                 }
             } else if let errorMessage {
-                Section("Error") {
+                Section("错误") {
                     Text(errorMessage)
                         .foregroundStyle(.red)
                 }
             }
 
             if let response = recordsResponse {
-                Section("Overview") {
-                    LabeledContent("Server Total", value: "\(response.total)")
-                    LabeledContent("Fetched", value: "\(response.data.count)")
+                Section("概览") {
+                    LabeledContent("服务端总数", value: "\(response.total)")
+                    LabeledContent("当前已拉取", value: "\(response.data.count)")
                     if let latest = response.data.first?.bridgeSentAt {
-                        LabeledContent("Latest Batch", value: latest)
+                        LabeledContent("最近批次", value: latest)
                     }
-                    Text("This page shows the most recent \(pageLimit) synced records currently stored on the server for this Device ID.")
+                    Text("本页展示当前设备在服务端最近同步的 \(pageLimit) 条记录。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
 
                 if !recentTypeCounts.isEmpty {
-                    Section("Recent Type Mix") {
+                    Section("近期类型分布") {
                         ForEach(recentTypeCounts, id: \.type) { entry in
                             HStack {
                                 Text(shortTypeName(entry.type))
@@ -56,7 +56,7 @@ struct RecentSyncedDataView: View {
                     }
                 }
 
-                Section("Recent Records") {
+                Section("最近记录") {
                     ForEach(response.data) { record in
                         VStack(alignment: .leading, spacing: 6) {
                             HStack(alignment: .firstTextBaseline) {
@@ -83,10 +83,10 @@ struct RecentSyncedDataView: View {
                 }
             }
         }
-        .navigationTitle("Recent Sync Data")
+        .navigationTitle("最近同步数据")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button(isLoading ? "Refreshing..." : "Refresh") {
+                Button(isLoading ? "刷新中..." : "刷新") {
                     Task {
                         await loadRecentRecords()
                     }
@@ -107,10 +107,10 @@ private extension RecentSyncedDataView {
     var configurationIssue: String? {
         let settings = appState.syncStore.settings
         if settings.baseURLString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return "Set Base URL first."
+            return "请先填写服务端地址。"
         }
         if settings.deviceID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return "Set Device ID first."
+            return "请先填写设备编号。"
         }
         return nil
     }
@@ -175,6 +175,6 @@ private extension RecentSyncedRecord {
         if let unit, !unit.isEmpty {
             return unit
         }
-        return "No value"
+        return "无数值"
     }
 }

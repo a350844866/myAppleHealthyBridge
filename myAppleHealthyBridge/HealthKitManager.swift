@@ -97,12 +97,12 @@ final class HealthKitManager {
 
     func authorizationSummary() -> String {
         guard isHealthDataAvailable() else {
-            return "Unavailable"
+            return "不可用"
         }
 
         let sampleTypes = sampleTypes
         guard !sampleTypes.isEmpty else {
-            return "Unknown"
+            return "未知"
         }
 
         let authorizedCount = sampleTypes.reduce(into: 0) { count, type in
@@ -112,14 +112,14 @@ final class HealthKitManager {
         }
 
         if authorizedCount == sampleTypes.count {
-            return "Authorized"
+            return "已授权"
         }
 
         if authorizedCount > 0 {
-            return "Partially Authorized"
+            return "部分授权"
         }
 
-        return "Not Determined"
+        return "未决定"
     }
 
     var supportedTypeIdentifiers: [String] {
