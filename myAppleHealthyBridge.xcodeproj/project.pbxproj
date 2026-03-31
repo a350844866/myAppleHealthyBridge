@@ -16,6 +16,7 @@
 		A00000000000000000000007 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000017 /* AppState.swift */; };
 		A00000000000000000000008 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000018 /* Models.swift */; };
 		A00000000000000000000009 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000019 /* Assets.xcassets */; };
+		A0000000000000000000000A /* RecentSyncedDataView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000022 /* RecentSyncedDataView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -31,6 +32,7 @@
 		A00000000000000000000019 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A00000000000000000000020 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A00000000000000000000021 /* myAppleHealthyBridge.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = myAppleHealthyBridge.entitlements; sourceTree = "<group>"; };
+		A00000000000000000000022 /* RecentSyncedDataView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentSyncedDataView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -61,6 +63,7 @@
 				A00000000000000000000013 /* HealthKitManager.swift */,
 				A00000000000000000000015 /* IngestClient.swift */,
 				A00000000000000000000018 /* Models.swift */,
+				A00000000000000000000022 /* RecentSyncedDataView.swift */,
 				A00000000000000000000016 /* SyncCoordinator.swift */,
 				A00000000000000000000014 /* SyncStore.swift */,
 				A00000000000000000000019 /* Assets.xcassets */,
@@ -152,6 +155,7 @@
 				A00000000000000000000003 /* HealthKitManager.swift in Sources */,
 				A00000000000000000000005 /* IngestClient.swift in Sources */,
 				A00000000000000000000008 /* Models.swift in Sources */,
+				A0000000000000000000000A /* RecentSyncedDataView.swift in Sources */,
 				A00000000000000000000006 /* SyncCoordinator.swift in Sources */,
 				A00000000000000000000004 /* SyncStore.swift in Sources */,
 				A00000000000000000000001 /* myAppleHealthyBridgeApp.swift in Sources */,

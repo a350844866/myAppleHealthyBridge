@@ -4,6 +4,12 @@ import HealthKit
 struct AnchoredSamplesResult {
     let samples: [IngestItem]
     let newAnchor: HKQueryAnchor?
+    let reachedQueryLimit: Bool
+}
+
+struct AnchoredFetchBatchResult {
+    let results: [String: AnchoredSamplesResult]
+    let reachedSyncLimit: Bool
 }
 
 final class HealthKitManager {
@@ -18,6 +24,8 @@ final class HealthKitManager {
 
     private let store = HKHealthStore()
     private var observerQueries: [String: HKObserverQuery] = [:]
+    private let maxSamplesPerTypePerSync = 200
+    private let maxSamplesPerSync = 1_000
 
     private let quantityTypeSpecs: [QuantityTypeSpec] = [
         .init(identifier: "HKQuantityTypeIdentifierHeartRate", unit: HKUnit.count().unitDivided(by: .minute())),
@@ -118,33 +126,63 @@ final class HealthKitManager {
         resolvedQuantityTypes.map(\.spec.identifier) + resolvedCategoryTypes.map(\.spec.identifier)
     }
 
-    func fetchAllAnchoredSamples(anchors: [String: HKQueryAnchor?]) async throws -> [String: AnchoredSamplesResult] {
+    func fetchAllAnchoredSamples(
+        anchors: [String: HKQueryAnchor?],
+        baselineStartAt: Date?
+    ) async throws -> AnchoredFetchBatchResult {
         var results: [String: AnchoredSamplesResult] = [:]
+        var remainingSampleBudget = maxSamplesPerSync
+        var reachedSyncLimit = false
+        let predicate = Self.predicate(forBaselineStartAt: baselineStartAt)
 
         for entry in resolvedQuantityTypes {
+            guard remainingSampleBudget > 0 else {
+                reachedSyncLimit = true
+                break
+            }
+
             let key = entry.spec.identifier
-            results[key] = try await fetchQuantitySamples(
+            let result = try await fetchQuantitySamples(
                 type: entry.type,
                 typeIdentifier: key,
                 unit: entry.spec.unit,
-                anchor: anchors[key] ?? nil
+                predicate: predicate,
+                anchor: anchors[key] ?? nil,
+                limit: min(maxSamplesPerTypePerSync, remainingSampleBudget)
             )
+            results[key] = result
+            remainingSampleBudget -= result.samples.count
+            reachedSyncLimit = reachedSyncLimit || result.reachedQueryLimit
         }
 
         for entry in resolvedCategoryTypes {
+            guard remainingSampleBudget > 0 else {
+                reachedSyncLimit = true
+                break
+            }
+
             let key = entry.spec.identifier
-            results[key] = try await fetchCategorySamples(
+            let result = try await fetchCategorySamples(
                 type: entry.type,
                 typeIdentifier: key,
-                anchor: anchors[key] ?? nil
+                predicate: predicate,
+                anchor: anchors[key] ?? nil,
+                limit: min(maxSamplesPerTypePerSync, remainingSampleBudget)
             )
+            results[key] = result
+            remainingSampleBudget -= result.samples.count
+            reachedSyncLimit = reachedSyncLimit || result.reachedQueryLimit
         }
 
-        return results
+        return AnchoredFetchBatchResult(results: results, reachedSyncLimit: reachedSyncLimit)
     }
 
-    func startObservers(onUpdate: @escaping @Sendable (String) -> Void) async throws -> Int {
+    func startObservers(
+        baselineStartAt: Date?,
+        onUpdate: @escaping @Sendable (String) -> Void
+    ) async throws -> Int {
         let sampleEntries = resolvedSampleTypes
+        let predicate = Self.predicate(forBaselineStartAt: baselineStartAt)
         guard !sampleEntries.isEmpty else {
             observerQueries.removeAll()
             return 0
@@ -157,12 +195,8 @@ final class HealthKitManager {
         observerQueries.removeAll()
 
         for entry in sampleEntries {
-            let query = HKObserverQuery(sampleType: entry.type, predicate: nil) { [weak self] _, completionHandler, error in
+            let query = HKObserverQuery(sampleType: entry.type, predicate: predicate) { _, completionHandler, error in
                 defer { completionHandler() }
-
-                guard self != nil else {
-                    return
-                }
 
                 if error == nil {
                     onUpdate(entry.identifier)
@@ -226,14 +260,16 @@ final class HealthKitManager {
         type: HKQuantityType,
         typeIdentifier: String,
         unit: HKUnit,
-        anchor: HKQueryAnchor?
+        predicate: NSPredicate?,
+        anchor: HKQueryAnchor?,
+        limit: Int
     ) async throws -> AnchoredSamplesResult {
         try await withCheckedThrowingContinuation { continuation in
             let query = HKAnchoredObjectQuery(
                 type: type,
-                predicate: nil,
+                predicate: predicate,
                 anchor: anchor,
-                limit: HKObjectQueryNoLimit
+                limit: limit
             ) { _, samples, _, newAnchor, error in
                 if let error {
                     continuation.resume(throwing: error)
@@ -254,7 +290,13 @@ final class HealthKitManager {
                     )
                 }
 
-                continuation.resume(returning: AnchoredSamplesResult(samples: items, newAnchor: newAnchor))
+                continuation.resume(
+                    returning: AnchoredSamplesResult(
+                        samples: items,
+                        newAnchor: newAnchor,
+                        reachedQueryLimit: items.count >= limit
+                    )
+                )
             }
 
             store.execute(query)
@@ -264,14 +306,16 @@ final class HealthKitManager {
     private func fetchCategorySamples(
         type: HKCategoryType,
         typeIdentifier: String,
-        anchor: HKQueryAnchor?
+        predicate: NSPredicate?,
+        anchor: HKQueryAnchor?,
+        limit: Int
     ) async throws -> AnchoredSamplesResult {
         try await withCheckedThrowingContinuation { continuation in
             let query = HKAnchoredObjectQuery(
                 type: type,
-                predicate: nil,
+                predicate: predicate,
                 anchor: anchor,
-                limit: HKObjectQueryNoLimit
+                limit: limit
             ) { _, samples, _, newAnchor, error in
                 if let error {
                     continuation.resume(throwing: error)
@@ -292,7 +336,13 @@ final class HealthKitManager {
                     )
                 }
 
-                continuation.resume(returning: AnchoredSamplesResult(samples: items, newAnchor: newAnchor))
+                continuation.resume(
+                    returning: AnchoredSamplesResult(
+                        samples: items,
+                        newAnchor: newAnchor,
+                        reachedQueryLimit: items.count >= limit
+                    )
+                )
             }
 
             store.execute(query)
@@ -421,8 +471,19 @@ final class HealthKitManager {
         }
     }
 
+    private static func predicate(forBaselineStartAt baselineStartAt: Date?) -> NSPredicate? {
+        guard let baselineStartAt else {
+            return nil
+        }
+        return HKQuery.predicateForSamples(
+            withStart: baselineStartAt,
+            end: nil,
+            options: [.strictStartDate]
+        )
+    }
+
     private func enableBackgroundDelivery(for sampleType: HKSampleType) async throws {
-        try await withCheckedThrowingContinuation { continuation in
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             store.enableBackgroundDelivery(for: sampleType, frequency: .immediate) { success, error in
                 if let error {
                     continuation.resume(throwing: error)

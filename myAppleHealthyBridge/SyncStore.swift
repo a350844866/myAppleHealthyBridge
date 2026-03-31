@@ -54,13 +54,31 @@ final class SyncStore: ObservableObject {
         }
     }
 
-    func updateSettings(baseURLString: String, apiToken: String, deviceID: String, autoSyncEnabled: Bool) {
+    func updateSettings(
+        baseURLString: String,
+        apiToken: String,
+        basicAuthUsername: String,
+        basicAuthPassword: String,
+        deviceID: String,
+        autoSyncEnabled: Bool
+    ) -> Bool {
+        let trimmedDeviceID = deviceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let deviceIDChanged = settings.deviceID != trimmedDeviceID
         settings = SyncSettings(
             baseURLString: baseURLString.trimmingCharacters(in: .whitespacesAndNewlines),
             apiToken: apiToken.trimmingCharacters(in: .whitespacesAndNewlines),
-            deviceID: deviceID.trimmingCharacters(in: .whitespacesAndNewlines),
+            basicAuthUsername: basicAuthUsername.trimmingCharacters(in: .whitespacesAndNewlines),
+            basicAuthPassword: basicAuthPassword,
+            deviceID: trimmedDeviceID,
+            baselineStartAt: deviceIDChanged ? nil : settings.baselineStartAt,
             autoSyncEnabled: autoSyncEnabled
         )
+        persist(settings, forKey: settingsKey)
+        return deviceIDChanged
+    }
+
+    func setBaselineStartAt(_ date: Date?) {
+        settings.baselineStartAt = date
         persist(settings, forKey: settingsKey)
     }
 
@@ -105,6 +123,20 @@ final class SyncStore: ObservableObject {
     func save(anchor: HKQueryAnchor, for identifier: String) throws {
         let data = try NSKeyedArchiver.archivedData(withRootObject: anchor, requiringSecureCoding: true)
         defaults.set(data, forKey: anchorKey(for: identifier))
+    }
+
+    func save(encodedAnchor: String, for identifier: String) {
+        defaults.set(Data(base64Encoded: encodedAnchor), forKey: anchorKey(for: identifier))
+    }
+
+    func removeAnchors(for identifiers: [String]) {
+        for identifier in identifiers {
+            defaults.removeObject(forKey: anchorKey(for: identifier))
+        }
+    }
+
+    func hasAnyAnchors(for identifiers: [String]) -> Bool {
+        identifiers.contains { defaults.data(forKey: anchorKey(for: $0)) != nil }
     }
 
     func encodedAnchors(for identifiers: [String]) -> [String: String] {
