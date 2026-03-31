@@ -163,11 +163,7 @@ struct ContentView: View {
                     }
                     .disabled(appState.syncCoordinator.isAuthorizing || appState.syncCoordinator.isSyncing || activeAction != nil)
 
-                    Button(activeAction == .backfillHistory || appState.syncCoordinator.isSyncing
-                           ? (appState.syncCoordinator.backfillBatchCount > 0
-                              ? "回填中（第 \(appState.syncCoordinator.backfillBatchCount) 批）..."
-                              : "回填中...")
-                           : "回填全部历史") {
+                    Button(backfillButtonLabel) {
                         activeAction = .backfillHistory
                         Task {
                             await appState.syncCoordinator.runBackfillHistory()
@@ -184,7 +180,7 @@ struct ContentView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
-                    Text("「上传最近 7 天」是一次性历史回填，不会改写当前增量游标；适合在「从现在开始」之后补最近一周数据。\n\n「回填全部历史」会分批上传 HealthKit 中所有历史记录（每批 5000 条），服务端自动去重已导入的数据。游标会随批次推进，可随时中断后续接着回填。")
+                    Text("「上传最近 7 天」是一次性历史回填，不会改写当前增量游标；适合在「从现在开始」之后补最近一周数据。\n\n「回填全部历史」会分批上传 HealthKit 中所有历史记录（每批 200 条），服务端自动去重已导入的数据。游标会随批次推进，可随时中断后续接着回填。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
@@ -251,6 +247,30 @@ struct ContentView: View {
 }
 
 private extension ContentView {
+    var backfillButtonLabel: String {
+        let coordinator = appState.syncCoordinator
+        guard activeAction == .backfillHistory || (coordinator.isSyncing && coordinator.backfillBatchCount > 0) else {
+            return "回填全部历史"
+        }
+        guard coordinator.backfillBatchCount > 0 else {
+            return "回填中..."
+        }
+        let sent = coordinator.backfillSentTotal
+        if let total = coordinator.backfillServerTotal, total > 0 {
+            let totalFormatted = Self.formatCount(total)
+            return "回填中 \(sent)/\(totalFormatted)（第\(coordinator.backfillBatchCount)批）"
+        }
+        return "回填中 已发送\(sent)条（第\(coordinator.backfillBatchCount)批）"
+    }
+
+    static func formatCount(_ n: Int) -> String {
+        if n >= 10_000 {
+            let wan = Double(n) / 10_000.0
+            return String(format: "%.0f万", wan)
+        }
+        return "\(n)"
+    }
+
     func presentResultAlert(fallbackTitle: String, fallbackMessage: String) {
         if let result = appState.syncStore.lastSyncResult {
             feedbackAlert = FeedbackAlert(

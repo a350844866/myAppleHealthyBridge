@@ -41,6 +41,8 @@ final class SyncCoordinator: ObservableObject {
     @Published private(set) var isAuthorizing = false
     @Published private(set) var isSyncing = false
     @Published private(set) var backfillBatchCount = 0
+    @Published private(set) var backfillSentTotal = 0
+    @Published private(set) var backfillServerTotal: Int?
     @Published private(set) var authorizationStateText = "未知"
     @Published private(set) var observerStateText = "已关闭"
     @Published private(set) var latestPayloadPreview = ""
@@ -165,6 +167,13 @@ final class SyncCoordinator: ObservableObject {
 
         isSyncing = true
         backfillBatchCount = 0
+        backfillSentTotal = 0
+        backfillServerTotal = nil
+
+        // Fetch server-side total for progress display
+        if let overview = try? await fetchServerOverview() {
+            backfillServerTotal = overview
+        }
 
         syncStore.record(result: SyncRunResult(
             timestamp: .now,
@@ -176,11 +185,13 @@ final class SyncCoordinator: ObservableObject {
             backfillBatchCount += 1
             let reachedLimit = await runBackfillBatch(batchNumber: backfillBatchCount)
             if !reachedLimit { break }
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
         }
 
         isSyncing = false
         backfillBatchCount = 0
+        backfillSentTotal = 0
+        backfillServerTotal = nil
         await runQueuedObserverSyncIfNeeded()
     }
 
@@ -587,8 +598,8 @@ final class SyncCoordinator: ObservableObject {
             let batch = try await healthKitManager.fetchAllAnchoredSamples(
                 anchors: anchorMap,
                 baselineStartAt: nil,
-                maxPerType: 500,
-                maxTotal: 5_000
+                maxPerType: 50,
+                maxTotal: 200
             )
             let results = batch.results
             let items = results.values.flatMap(\.samples).sorted { $0.startAt < $1.startAt }
@@ -621,7 +632,7 @@ final class SyncCoordinator: ObservableObject {
             if items.isEmpty {
                 syncStore.record(result: SyncRunResult(
                     timestamp: .now,
-                    message: "全量历史回填完成，共 \(batchNumber - 1) 批。",
+                    message: "全量历史回填完成，共 \(batchNumber - 1) 批，累计发送 \(backfillSentTotal) 条。",
                     success: true
                 ))
                 return false
@@ -633,12 +644,20 @@ final class SyncCoordinator: ObservableObject {
                 try syncStore.save(anchor: anchor, for: identifier)
             }
 
+            backfillSentTotal += items.count
+
             let acceptedCount = response.accepted ?? items.count
             let deduplicatedCount = response.deduplicated ?? 0
+            let progressText: String
+            if let serverTotal = backfillServerTotal, serverTotal > 0 {
+                progressText = " [\(backfillSentTotal)/\(serverTotal)]"
+            } else {
+                progressText = " [已发送 \(backfillSentTotal)]"
+            }
             let contMsg = batch.reachedSyncLimit ? " 继续下一批..." : " 全部回填完成。"
             syncStore.record(result: SyncRunResult(
                 timestamp: .now,
-                message: "全量回填第 \(batchNumber) 批完成。已上传 \(items.count) 条；服务端接受 \(acceptedCount) 条，去重 \(deduplicatedCount) 条。\(contMsg)",
+                message: "回填第 \(batchNumber) 批\(progressText)：上传 \(items.count) 条，接受 \(acceptedCount)，去重 \(deduplicatedCount)。\(contMsg)",
                 success: true
             ))
 
@@ -651,6 +670,30 @@ final class SyncCoordinator: ObservableObject {
             ))
             return false
         }
+    }
+
+    private func fetchServerOverview() async throws -> Int? {
+        let settings = syncStore.settings
+        guard let baseURL = URL(string: settings.baseURLString), !settings.baseURLString.isEmpty else {
+            return nil
+        }
+        let url = baseURL.appending(path: "api/stats/overview")
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 15
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200..<300).contains(httpResponse.statusCode) else {
+            return nil
+        }
+        struct OverviewRecords: Decodable {
+            let total_records: Int?
+        }
+        struct OverviewResponse: Decodable {
+            let records: OverviewRecords?
+        }
+        let overview = try JSONDecoder().decode(OverviewResponse.self, from: data)
+        return overview.records?.total_records
     }
 
     private func runQueuedObserverSyncIfNeeded() async {
