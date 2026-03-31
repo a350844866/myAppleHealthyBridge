@@ -299,9 +299,10 @@ final class SyncCoordinator: ObservableObject {
         do {
             let count = try await healthKitManager.startObservers(
                 baselineStartAt: syncStore.settings.baselineStartAt
-            ) { [weak self] identifier in
+            ) { [weak self] identifier, completionHandler in
                 Task { [weak self] in
                     await self?.handleObserverUpdate(identifier: identifier)
+                    completionHandler()
                 }
             }
             syncStore.recordObserverState(isEnabled: true, observedTypeCount: count, lastErrorMessage: nil)

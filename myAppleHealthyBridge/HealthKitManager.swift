@@ -179,7 +179,7 @@ final class HealthKitManager {
 
     func startObservers(
         baselineStartAt: Date?,
-        onUpdate: @escaping @Sendable (String) -> Void
+        onUpdate: @escaping @Sendable (String, @escaping () -> Void) -> Void
     ) async throws -> Int {
         let sampleEntries = resolvedSampleTypes
         let predicate = Self.predicate(forBaselineStartAt: baselineStartAt)
@@ -196,11 +196,13 @@ final class HealthKitManager {
 
         for entry in sampleEntries {
             let query = HKObserverQuery(sampleType: entry.type, predicate: predicate) { _, completionHandler, error in
-                defer { completionHandler() }
-
-                if error == nil {
-                    onUpdate(entry.identifier)
+                if error != nil {
+                    completionHandler()
+                    return
                 }
+                // Pass completionHandler to the sync handler — it MUST call it
+                // when sync is done so iOS keeps the app alive until then.
+                onUpdate(entry.identifier, completionHandler)
             }
             observerQueries[entry.identifier] = query
             store.execute(query)
