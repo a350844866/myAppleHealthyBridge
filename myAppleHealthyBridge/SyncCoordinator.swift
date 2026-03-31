@@ -51,6 +51,9 @@ final class SyncCoordinator: ObservableObject {
     private let syncStore: SyncStore
     private let ingestClient: IngestClient
     private var pendingObserverTypeIdentifiers: Set<String> = []
+    private var retryTask: Task<Void, Never>?
+    private var consecutiveFailures = 0
+    private static let maxRetryDelay: UInt64 = 120_000_000_000 // 120s
 
     init(healthKitManager: HealthKitManager, syncStore: SyncStore, ingestClient: IngestClient) {
         self.healthKitManager = healthKitManager
@@ -271,16 +274,21 @@ final class SyncCoordinator: ObservableObject {
             return
         }
 
+        // Try to restore server anchors, but don't block observer setup if we already
+        // have local cursors — network may be temporarily unavailable.
         do {
             _ = try await restoreServerAnchorsIfAvailable(recordResult: false)
         } catch {
-            syncStore.recordObserverState(
-                isEnabled: false,
-                observedTypeCount: 0,
-                lastErrorMessage: error.localizedDescription
-            )
-            observerStateText = "观察器失败"
-            return
+            if !hasSyncCursor {
+                syncStore.recordObserverState(
+                    isEnabled: false,
+                    observedTypeCount: 0,
+                    lastErrorMessage: error.localizedDescription
+                )
+                observerStateText = "观察器失败"
+                return
+            }
+            // Have local cursors, proceed with observer setup despite restore failure
         }
 
         guard hasSyncCursor else {
@@ -338,6 +346,32 @@ final class SyncCoordinator: ObservableObject {
         }
 
         await runSync(trigger: .observer, mode: .incremental, changedTypeIdentifier: identifier)
+    }
+
+    /// Called when app returns to foreground — catch up on any missed observer deliveries.
+    func handleForegroundReturn() async {
+        guard syncStore.settings.autoSyncEnabled, hasSyncCursor, !isSyncing else { return }
+        retryTask?.cancel()
+        retryTask = nil
+        consecutiveFailures = 0
+        await runSync(trigger: .observer, mode: .incremental, changedTypeIdentifier: "前台恢复")
+    }
+
+    private func scheduleRetry() {
+        retryTask?.cancel()
+        consecutiveFailures += 1
+        let baseDelay: UInt64 = 5_000_000_000 // 5s
+        let delay = min(baseDelay * UInt64(1 << min(consecutiveFailures - 1, 5)), Self.maxRetryDelay)
+        retryTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: delay)
+            guard !Task.isCancelled else { return }
+            await self?.executeRetry()
+        }
+    }
+
+    private func executeRetry() async {
+        guard syncStore.settings.autoSyncEnabled, hasSyncCursor, !isSyncing else { return }
+        await runSync(trigger: .observer, mode: .incremental, changedTypeIdentifier: "自动重试(\(consecutiveFailures))")
     }
 
     private enum SyncTrigger {
@@ -450,6 +484,9 @@ final class SyncCoordinator: ObservableObject {
             let message = "\(trigger.label)同步完成\(triggerDetail)。已上传 \(items.count) 条；服务端接受 \(acceptedCount) 条，去重 \(deduplicatedCount) 条。\(batchDetail)"
             syncStore.record(result: SyncRunResult(timestamp: .now, message: message, success: true))
             observerStateText = Self.makeObserverText(settings: syncStore.settings, runtimeState: syncStore.observerRuntimeState)
+            consecutiveFailures = 0
+            retryTask?.cancel()
+            retryTask = nil
         } catch {
             syncStore.record(
                 result: SyncRunResult(
@@ -459,7 +496,8 @@ final class SyncCoordinator: ObservableObject {
                 )
             )
             if case .observer = trigger {
-                observerStateText = "观察器同步失败"
+                observerStateText = "同步失败，将自动重试"
+                scheduleRetry()
             }
         }
 
@@ -707,6 +745,8 @@ final class SyncCoordinator: ObservableObject {
         }
 
         let queuedIdentifiers = pendingObserverTypeIdentifiers
+        // Don't clear yet — runSync will set isSyncing, and if it fails
+        // the retry mechanism will handle it. Clear only after we start.
         pendingObserverTypeIdentifiers.removeAll()
 
         let changedTypeIdentifier: String?

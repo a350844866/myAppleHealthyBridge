@@ -11,8 +11,8 @@ struct IngestClient {
         } else {
             let configuration = URLSessionConfiguration.default
             configuration.waitsForConnectivity = true
-            configuration.timeoutIntervalForRequest = 180
-            configuration.timeoutIntervalForResource = 600
+            configuration.timeoutIntervalForRequest = 60
+            configuration.timeoutIntervalForResource = 120
             self.session = URLSession(configuration: configuration)
         }
 
@@ -119,7 +119,7 @@ struct IngestClient {
         let url = baseURL.appending(path: "ingest")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.timeoutInterval = 300
+        request.timeoutInterval = 60
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         applyAuthorization(to: &request, settings: settings)
 
