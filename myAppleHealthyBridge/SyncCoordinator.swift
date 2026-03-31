@@ -29,7 +29,7 @@ enum SyncError: LocalizedError {
         case .serverRejected(let message):
             return "服务端拒绝同步：\(message)"
         case .syncCursorNotInitialized:
-            return "未找到同步游标。请先恢复服务端游标，或先点“从现在开始”，再执行同步。"
+            return "未找到同步游标。请先恢复服务端游标，或先点「从现在开始」，再执行同步。"
         case .unsupportedSampleType(let identifier):
             return "不支持的健康数据类型：\(identifier)"
         }
@@ -195,7 +195,7 @@ final class SyncCoordinator: ObservableObject {
                 syncStore.record(
                     result: SyncRunResult(
                         timestamp: .now,
-                        message: "这个设备编号在服务端没有同步游标。请使用“从现在开始”建立新的增量游标。",
+                        message: "这个设备编号在服务端没有同步游标。请使用「从现在开始」建立新的增量游标。",
                         success: false
                     )
                 )
@@ -220,7 +220,7 @@ final class SyncCoordinator: ObservableObject {
         syncStore.record(
             result: SyncRunResult(
                 timestamp: .now,
-                message: "“从现在开始”已初始化。后续同步只会包含开始时间在 \(now.formatted(date: .abbreviated, time: .standard)) 及之后的健康数据样本。",
+                message: "「从现在开始」已初始化。后续同步只会包含开始时间在 \(now.formatted(date: .abbreviated, time: .standard)) 及之后的健康数据样本。",
                 success: true
             )
         )
@@ -233,7 +233,7 @@ final class SyncCoordinator: ObservableObject {
         syncStore.record(
             result: SyncRunResult(
                 timestamp: .now,
-                message: "设备编号已变更。本地同步游标和“从现在开始”基线已清空，请重新恢复服务端游标或重新初始化“从现在开始”。",
+                message: "设备编号已变更。本地同步游标和「从现在开始」基线已清空，请重新恢复服务端游标或重新初始化「从现在开始」。",
                 success: true
             )
         )
