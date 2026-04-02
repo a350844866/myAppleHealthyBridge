@@ -130,8 +130,11 @@ GET /api/records/recent?device_id=<设备编号>&limit=50
 - `HKQuantityTypeIdentifierStepCount`
 - `HKQuantityTypeIdentifierActiveEnergyBurned`
 - `HKQuantityTypeIdentifierBasalEnergyBurned`
+- `HKQuantityTypeIdentifierPhysicalEffort`
 - `HKQuantityTypeIdentifierDistanceWalkingRunning`
 - `HKQuantityTypeIdentifierWalkingSpeed`
+- `HKQuantityTypeIdentifierStairAscentSpeed`
+- `HKQuantityTypeIdentifierStairDescentSpeed`
 - `HKQuantityTypeIdentifierAppleExerciseTime`
 - `HKQuantityTypeIdentifierAppleStandTime`
 - `HKQuantityTypeIdentifierHeartRateVariabilitySDNN`
@@ -155,8 +158,10 @@ GET /api/records/recent?device_id=<设备编号>&limit=50
 - `HKQuantityTypeIdentifierSwimmingStrokeCount`
 - `HKQuantityTypeIdentifierPushCount`
 - `HKQuantityTypeIdentifierEnvironmentalAudioExposure`
+- `HKQuantityTypeIdentifierEnvironmentalSoundReduction`
 - `HKQuantityTypeIdentifierHeadphoneAudioExposure`
 - `HKQuantityTypeIdentifierBodyMass`
+- `HKQuantityTypeIdentifierBodyMassIndex`
 - `HKQuantityTypeIdentifierLeanBodyMass`
 - `HKQuantityTypeIdentifierHeight`
 - `HKQuantityTypeIdentifierBodyFatPercentage`
@@ -167,12 +172,15 @@ GET /api/records/recent?device_id=<设备编号>&limit=50
 - `HKQuantityTypeIdentifierBodyTemperature`
 - `HKQuantityTypeIdentifierAppleSleepingWristTemperature`
 - `HKCategoryTypeIdentifierSleepAnalysis`
+- `HKCategoryTypeIdentifierAppleStandHour`
 - `HKCategoryTypeIdentifierAudioExposureEvent`
 - `HKCategoryTypeIdentifierHandwashingEvent`
 - `HKCategoryTypeIdentifierHighHeartRateEvent`
 - `HKCategoryTypeIdentifierLowHeartRateEvent`
 - `HKCategoryTypeIdentifierIrregularHeartRhythmEvent`
 - `HKCategoryTypeIdentifierLowCardioFitnessEvent`
+- `HKCategoryTypeIdentifierShortnessOfBreath`
+- `HKCategoryTypeIdentifierFatigue`
 
 补充说明：
 
@@ -193,7 +201,7 @@ GET /api/records/recent?device_id=<设备编号>&limit=50
 - 自动同步依赖 observer，没有后台补偿同步
 - 还没有 workout 专用 payload
 - 还没有 correlation / clinical records 支持
-- `HKQuantityTypeIdentifierPhysicalEffort`、`HKQuantityTypeIdentifierBodyMassIndex` 等类型仍待单独确认单位和口径
+- 目标类配置数据如 `HKDataTypeSleepDurationGoal` 仍未纳入当前 sample ingest
 
 ## 文档约定
 

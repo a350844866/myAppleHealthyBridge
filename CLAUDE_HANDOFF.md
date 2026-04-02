@@ -9,6 +9,27 @@
 - 已接通服务端增量同步接口
 - 已支持服务端游标恢复、`从现在开始`、手动同步、最近 7 天回填、最近同步数据概览
 - 自动同步已接上 `HKObserverQuery` + `enableBackgroundDelivery`
+- 已补齐一批历史库里实际存在、之前 bridge 未覆盖的 sample 类型
+
+本轮新增覆盖：
+
+- `HKQuantityTypeIdentifierPhysicalEffort`
+- `HKQuantityTypeIdentifierStairAscentSpeed`
+- `HKQuantityTypeIdentifierStairDescentSpeed`
+- `HKQuantityTypeIdentifierEnvironmentalSoundReduction`
+- `HKQuantityTypeIdentifierBodyMassIndex`
+- `HKCategoryTypeIdentifierAppleStandHour`
+- `HKCategoryTypeIdentifierShortnessOfBreath`
+- `HKCategoryTypeIdentifierFatigue`
+
+当前数据库历史类型与 bridge 支持清单对照后，剩余未覆盖项只剩：
+
+- `HKDataTypeSleepDurationGoal`
+
+说明：
+
+- 这不是当前 `sample ingest` 链路里常规处理的 quantity / category 类型
+- 本轮没有把它强行塞进 `POST /ingest` 的现有 schema
 
 ## 当前关键同步规则
 
@@ -75,6 +96,7 @@
 - 用户强杀应用后，不应假设还能继续稳定后台拉起
 - observer 事件可能被系统延迟或合并
 - 还没有 workout / correlation / clinical records 支持
+- `HKDataTypeSleepDurationGoal` 仍未纳入当前 sample ingest
 
 ## 常用命令
 

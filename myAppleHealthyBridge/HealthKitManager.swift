@@ -32,8 +32,11 @@ final class HealthKitManager {
         .init(identifier: "HKQuantityTypeIdentifierStepCount", unit: HKUnit.count()),
         .init(identifier: "HKQuantityTypeIdentifierActiveEnergyBurned", unit: .kilocalorie()),
         .init(identifier: "HKQuantityTypeIdentifierBasalEnergyBurned", unit: .kilocalorie()),
+        .init(identifier: "HKQuantityTypeIdentifierPhysicalEffort", unit: HKUnit(from: "kcal/hr·kg")),
         .init(identifier: "HKQuantityTypeIdentifierDistanceWalkingRunning", unit: .meter()),
         .init(identifier: "HKQuantityTypeIdentifierWalkingSpeed", unit: HKUnit.meter().unitDivided(by: .second())),
+        .init(identifier: "HKQuantityTypeIdentifierStairAscentSpeed", unit: HKUnit.meter().unitDivided(by: .second())),
+        .init(identifier: "HKQuantityTypeIdentifierStairDescentSpeed", unit: HKUnit.meter().unitDivided(by: .second())),
         .init(identifier: "HKQuantityTypeIdentifierAppleExerciseTime", unit: .minute()),
         .init(identifier: "HKQuantityTypeIdentifierAppleStandTime", unit: .minute()),
         .init(identifier: "HKQuantityTypeIdentifierHeartRateVariabilitySDNN", unit: .secondUnit(with: .milli)),
@@ -55,8 +58,10 @@ final class HealthKitManager {
         .init(identifier: "HKQuantityTypeIdentifierSwimmingStrokeCount", unit: .count()),
         .init(identifier: "HKQuantityTypeIdentifierPushCount", unit: .count()),
         .init(identifier: "HKQuantityTypeIdentifierEnvironmentalAudioExposure", unit: .decibelAWeightedSoundPressureLevel()),
+        .init(identifier: "HKQuantityTypeIdentifierEnvironmentalSoundReduction", unit: .decibelAWeightedSoundPressureLevel()),
         .init(identifier: "HKQuantityTypeIdentifierHeadphoneAudioExposure", unit: .decibelAWeightedSoundPressureLevel()),
         .init(identifier: "HKQuantityTypeIdentifierBodyMass", unit: .gramUnit(with: .kilo)),
+        .init(identifier: "HKQuantityTypeIdentifierBodyMassIndex", unit: .count()),
         .init(identifier: "HKQuantityTypeIdentifierLeanBodyMass", unit: .gramUnit(with: .kilo)),
         .init(identifier: "HKQuantityTypeIdentifierHeight", unit: .meter()),
         .init(identifier: "HKQuantityTypeIdentifierBodyFatPercentage", unit: .percent()),
@@ -72,12 +77,15 @@ final class HealthKitManager {
 
     private let categoryTypeSpecs: [CategoryTypeSpec] = [
         .init(identifier: "HKCategoryTypeIdentifierSleepAnalysis"),
+        .init(identifier: "HKCategoryTypeIdentifierAppleStandHour"),
         .init(identifier: "HKCategoryTypeIdentifierAudioExposureEvent"),
         .init(identifier: "HKCategoryTypeIdentifierHandwashingEvent"),
         .init(identifier: "HKCategoryTypeIdentifierHighHeartRateEvent"),
         .init(identifier: "HKCategoryTypeIdentifierLowHeartRateEvent"),
         .init(identifier: "HKCategoryTypeIdentifierIrregularHeartRhythmEvent"),
-        .init(identifier: "HKCategoryTypeIdentifierLowCardioFitnessEvent")
+        .init(identifier: "HKCategoryTypeIdentifierLowCardioFitnessEvent"),
+        .init(identifier: "HKCategoryTypeIdentifierShortnessOfBreath"),
+        .init(identifier: "HKCategoryTypeIdentifierFatigue")
     ]
 
     func isHealthDataAvailable() -> Bool {
@@ -443,6 +451,15 @@ final class HealthKitManager {
             default:
                 return "raw_\(value)"
             }
+        case "HKCategoryTypeIdentifierAppleStandHour":
+            switch value {
+            case 0:
+                return "HKCategoryValueAppleStandHourStood"
+            case 1:
+                return "HKCategoryValueAppleStandHourIdle"
+            default:
+                return "raw_\(value)"
+            }
         case "HKCategoryTypeIdentifierHandwashingEvent":
             return "raw_\(value)"
         case "HKCategoryTypeIdentifierHighHeartRateEvent":
@@ -452,6 +469,10 @@ final class HealthKitManager {
         case "HKCategoryTypeIdentifierIrregularHeartRhythmEvent":
             return "raw_\(value)"
         case "HKCategoryTypeIdentifierLowCardioFitnessEvent":
+            return "raw_\(value)"
+        case "HKCategoryTypeIdentifierShortnessOfBreath":
+            return "raw_\(value)"
+        case "HKCategoryTypeIdentifierFatigue":
             return "raw_\(value)"
         default:
             return "raw_\(value)"
