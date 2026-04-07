@@ -32,6 +32,7 @@ enum BackgroundTaskManager {
             try BGTaskScheduler.shared.submit(request)
             return true
         } catch {
+            print("[BGTask] 调度失败: \(error)")
             return false
         }
     }
@@ -47,6 +48,7 @@ enum BackgroundTaskManager {
             try BGTaskScheduler.shared.submit(request)
             return true
         } catch {
+            print("[BGTask] 调度失败: \(error)")
             return false
         }
     }

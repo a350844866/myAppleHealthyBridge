@@ -58,6 +58,7 @@ final class SyncCoordinator: ObservableObject {
     private static let backgroundIncrementalBudget = SyncBudget(maxPerType: 40, maxTotal: 240)
     private static let last7DaysBudget = SyncBudget(maxPerType: 120, maxTotal: 500)
     private static let historyBackfillBudget = SyncBudget(maxPerType: 50, maxTotal: 200)
+    private var hasStarted = false
 
     init(healthKitManager: HealthKitManager, syncStore: SyncStore, ingestClient: IngestClient) {
         self.healthKitManager = healthKitManager
@@ -72,6 +73,8 @@ final class SyncCoordinator: ObservableObject {
     }
 
     func start() async {
+        guard !hasStarted else { return }
+        hasStarted = true
         guard healthKitManager.isHealthDataAvailable() else {
             authorizationStateText = "不可用"
             observerStateText = "不可用"

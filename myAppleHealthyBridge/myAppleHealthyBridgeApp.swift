@@ -9,6 +9,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     ) -> Bool {
         let state = AppState()
         appState = state
+        Task { await state.syncCoordinator.start() }
         BackgroundTaskManager.registerTasks {
             await state.syncCoordinator.handleBackgroundSync()
         }
