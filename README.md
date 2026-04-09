@@ -218,4 +218,3 @@ GET /api/records/recent?device_id=<设备编号>&limit=50
 ## 文档约定
 
 - 长期说明以这份 `README.md` 为准
-- 交接执行信息见 [CLAUDE_HANDOFF.md](./CLAUDE_HANDOFF.md)
