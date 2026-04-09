@@ -129,8 +129,10 @@ final class HealthKitManager {
     }
 
     var supportedTypeIdentifiers: [String] {
-        resolvedQuantityTypes.map(\.spec.identifier) + resolvedCategoryTypes.map(\.spec.identifier)
+        resolvedQuantityTypes.map(\.spec.identifier) + resolvedCategoryTypes.map(\.spec.identifier) + [Self.workoutTypeKey]
     }
+
+    private static let workoutTypeKey = "HKWorkoutType"
 
     func fetchAllAnchoredSamples(
         anchors: [String: HKQueryAnchor?],
@@ -180,6 +182,21 @@ final class HealthKitManager {
             results[key] = result
             remainingSampleBudget -= result.samples.count
             reachedSyncLimit = reachedSyncLimit || result.reachedQueryLimit
+        }
+
+        // Fetch workouts
+        if remainingSampleBudget > 0 {
+            let key = Self.workoutTypeKey
+            let result = try await fetchWorkoutSamples(
+                predicate: predicate,
+                anchor: anchors[key] ?? nil,
+                limit: min(maxPerType, remainingSampleBudget)
+            )
+            results[key] = result
+            remainingSampleBudget -= result.samples.count
+            reachedSyncLimit = reachedSyncLimit || result.reachedQueryLimit
+        } else {
+            reachedSyncLimit = true
         }
 
         return AnchoredFetchBatchResult(results: results, reachedSyncLimit: reachedSyncLimit)
@@ -238,12 +255,13 @@ final class HealthKitManager {
     private var sampleTypes: [HKSampleType] {
         let quantities = resolvedQuantityTypes.map(\.type)
         let categories = resolvedCategoryTypes.map(\.type)
-        return quantities + categories
+        return quantities + categories + [HKObjectType.workoutType()]
     }
 
     private var resolvedSampleTypes: [(identifier: String, type: HKSampleType)] {
         resolvedQuantityTypes.map { ($0.spec.identifier, $0.type as HKSampleType) }
         + resolvedCategoryTypes.map { ($0.spec.identifier, $0.type as HKSampleType) }
+        + [(Self.workoutTypeKey, HKObjectType.workoutType())]
     }
 
     private var resolvedQuantityTypes: [(spec: QuantityTypeSpec, type: HKQuantityType)] {
@@ -343,6 +361,90 @@ final class HealthKitManager {
                         value: Double(sample.value),
                         unit: nil,
                         metadata: Self.metadata(for: sample, kind: "category", typeIdentifier: typeIdentifier, categoryValue: sample.value)
+                    )
+                }
+
+                continuation.resume(
+                    returning: AnchoredSamplesResult(
+                        samples: items,
+                        newAnchor: newAnchor,
+                        reachedQueryLimit: items.count >= limit
+                    )
+                )
+            }
+
+            store.execute(query)
+        }
+    }
+
+    private func fetchWorkoutSamples(
+        predicate: NSPredicate?,
+        anchor: HKQueryAnchor?,
+        limit: Int
+    ) async throws -> AnchoredSamplesResult {
+        try await withCheckedThrowingContinuation { continuation in
+            let query = HKAnchoredObjectQuery(
+                type: HKObjectType.workoutType(),
+                predicate: predicate,
+                anchor: anchor,
+                limit: limit
+            ) { _, samples, _, newAnchor, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                let items = (samples as? [HKWorkout] ?? []).map { workout in
+                    var meta: [String: String] = [:]
+                    meta["source_name"] = workout.sourceRevision.source.name
+                    if let version = workout.sourceRevision.version {
+                        meta["source_version"] = version
+                    }
+                    if let productType = workout.sourceRevision.productType {
+                        meta["product_type"] = productType
+                    }
+                    meta["sample_kind"] = "workout"
+
+                    let activityType = String(workout.workoutActivityType.rawValue)
+                    meta["activity_type_raw"] = activityType
+                    meta["activity_type"] = workout.workoutActivityType.name
+
+                    if let duration = workout.duration as Double? {
+                        meta["duration"] = String(duration)
+                        meta["duration_unit"] = "s"
+                    }
+
+                    if let distance = workout.totalDistance {
+                        meta["total_distance"] = String(distance.doubleValue(for: .meter()))
+                        meta["total_distance_unit"] = "m"
+                    }
+
+                    if let energy = workout.totalEnergyBurned {
+                        meta["total_energy_burned"] = String(energy.doubleValue(for: .kilocalorie()))
+                        meta["total_energy_burned_unit"] = "kcal"
+                    }
+
+                    if let device = workout.device {
+                        if let name = device.name { meta["device_name"] = name }
+                        if let model = device.model { meta["device_model"] = model }
+                    }
+
+                    if let hkMeta = workout.metadata {
+                        for (key, rawValue) in hkMeta {
+                            meta["hk_metadata_\(key)"] = Self.stringifyMetadataValue(rawValue)
+                        }
+                    }
+
+                    return IngestItem(
+                        source: "healthkit",
+                        kind: "workout",
+                        type: workout.workoutActivityType.name,
+                        uuid: workout.uuid.uuidString,
+                        startAt: workout.startDate,
+                        endAt: workout.endDate,
+                        value: workout.duration,
+                        unit: "s",
+                        metadata: meta
                     )
                 }
 
@@ -527,6 +629,89 @@ final class HealthKitManager {
             store.disableBackgroundDelivery(for: sampleType) { _, _ in
                 continuation.resume()
             }
+        }
+    }
+}
+
+extension HKWorkoutActivityType {
+    var name: String {
+        switch self {
+        case .americanFootball: return "HKWorkoutActivityTypeAmericanFootball"
+        case .archery: return "HKWorkoutActivityTypeArchery"
+        case .australianFootball: return "HKWorkoutActivityTypeAustralianFootball"
+        case .badminton: return "HKWorkoutActivityTypeBadminton"
+        case .baseball: return "HKWorkoutActivityTypeBaseball"
+        case .basketball: return "HKWorkoutActivityTypeBasketball"
+        case .bowling: return "HKWorkoutActivityTypeBowling"
+        case .boxing: return "HKWorkoutActivityTypeBoxing"
+        case .climbing: return "HKWorkoutActivityTypeClimbing"
+        case .cricket: return "HKWorkoutActivityTypeCricket"
+        case .crossTraining: return "HKWorkoutActivityTypeCrossTraining"
+        case .curling: return "HKWorkoutActivityTypeCurling"
+        case .cycling: return "HKWorkoutActivityTypeCycling"
+        case .dance: return "HKWorkoutActivityTypeDance"
+        case .elliptical: return "HKWorkoutActivityTypeElliptical"
+        case .equestrianSports: return "HKWorkoutActivityTypeEquestrianSports"
+        case .fencing: return "HKWorkoutActivityTypeFencing"
+        case .fishing: return "HKWorkoutActivityTypeFishing"
+        case .functionalStrengthTraining: return "HKWorkoutActivityTypeFunctionalStrengthTraining"
+        case .golf: return "HKWorkoutActivityTypeGolf"
+        case .gymnastics: return "HKWorkoutActivityTypeGymnastics"
+        case .handball: return "HKWorkoutActivityTypeHandball"
+        case .hiking: return "HKWorkoutActivityTypeHiking"
+        case .hockey: return "HKWorkoutActivityTypeHockey"
+        case .hunting: return "HKWorkoutActivityTypeHunting"
+        case .lacrosse: return "HKWorkoutActivityTypeLacrosse"
+        case .martialArts: return "HKWorkoutActivityTypeMartialArts"
+        case .mindAndBody: return "HKWorkoutActivityTypeMindAndBody"
+        case .paddleSports: return "HKWorkoutActivityTypePaddleSports"
+        case .play: return "HKWorkoutActivityTypePlay"
+        case .preparationAndRecovery: return "HKWorkoutActivityTypePreparationAndRecovery"
+        case .racquetball: return "HKWorkoutActivityTypeRacquetball"
+        case .rowing: return "HKWorkoutActivityTypeRowing"
+        case .rugby: return "HKWorkoutActivityTypeRugby"
+        case .running: return "HKWorkoutActivityTypeRunning"
+        case .sailing: return "HKWorkoutActivityTypeSailing"
+        case .skatingSports: return "HKWorkoutActivityTypeSkatingSports"
+        case .snowSports: return "HKWorkoutActivityTypeSnowSports"
+        case .soccer: return "HKWorkoutActivityTypeSoccer"
+        case .softball: return "HKWorkoutActivityTypeSoftball"
+        case .squash: return "HKWorkoutActivityTypeSquash"
+        case .stairClimbing: return "HKWorkoutActivityTypeStairClimbing"
+        case .surfingSports: return "HKWorkoutActivityTypeSurfingSports"
+        case .swimming: return "HKWorkoutActivityTypeSwimming"
+        case .tableTennis: return "HKWorkoutActivityTypeTableTennis"
+        case .tennis: return "HKWorkoutActivityTypeTennis"
+        case .trackAndField: return "HKWorkoutActivityTypeTrackAndField"
+        case .traditionalStrengthTraining: return "HKWorkoutActivityTypeTraditionalStrengthTraining"
+        case .volleyball: return "HKWorkoutActivityTypeVolleyball"
+        case .walking: return "HKWorkoutActivityTypeWalking"
+        case .waterFitness: return "HKWorkoutActivityTypeWaterFitness"
+        case .waterPolo: return "HKWorkoutActivityTypeWaterPolo"
+        case .waterSports: return "HKWorkoutActivityTypeWaterSports"
+        case .wrestling: return "HKWorkoutActivityTypeWrestling"
+        case .yoga: return "HKWorkoutActivityTypeYoga"
+        case .barre: return "HKWorkoutActivityTypeBarre"
+        case .coreTraining: return "HKWorkoutActivityTypeCoreTraining"
+        case .crossCountrySkiing: return "HKWorkoutActivityTypeCrossCountrySkiing"
+        case .downhillSkiing: return "HKWorkoutActivityTypeDownhillSkiing"
+        case .flexibility: return "HKWorkoutActivityTypeFlexibility"
+        case .highIntensityIntervalTraining: return "HKWorkoutActivityTypeHighIntensityIntervalTraining"
+        case .jumpRope: return "HKWorkoutActivityTypeJumpRope"
+        case .kickboxing: return "HKWorkoutActivityTypeKickboxing"
+        case .pilates: return "HKWorkoutActivityTypePilates"
+        case .snowboarding: return "HKWorkoutActivityTypeSnowboarding"
+        case .stairs: return "HKWorkoutActivityTypeStairs"
+        case .stepTraining: return "HKWorkoutActivityTypeStepTraining"
+        case .wheelchairWalkPace: return "HKWorkoutActivityTypeWheelchairWalkPace"
+        case .wheelchairRunPace: return "HKWorkoutActivityTypeWheelchairRunPace"
+        case .taiChi: return "HKWorkoutActivityTypeTaiChi"
+        case .mixedCardio: return "HKWorkoutActivityTypeMixedCardio"
+        case .handCycling: return "HKWorkoutActivityTypeHandCycling"
+        case .fitnessGaming: return "HKWorkoutActivityTypeFitnessGaming"
+        case .cooldown: return "HKWorkoutActivityTypeCooldown"
+        case .other: return "HKWorkoutActivityTypeOther"
+        @unknown default: return "HKWorkoutActivityTypeOther"
         }
     }
 }

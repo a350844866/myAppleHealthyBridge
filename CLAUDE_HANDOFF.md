@@ -10,26 +10,24 @@
 - 已支持服务端游标恢复、`从现在开始`、手动同步、最近 7 天回填、最近同步数据概览
 - 自动同步已接上 `HKObserverQuery` + `enableBackgroundDelivery`
 - 已补齐一批历史库里实际存在、之前 bridge 未覆盖的 sample 类型
+- **已新增 `HKWorkoutType` 增量同步**（2026-04-09）
 
-本轮新增覆盖：
+### 2026-04-09 本轮变更
 
-- `HKQuantityTypeIdentifierPhysicalEffort`
-- `HKQuantityTypeIdentifierStairAscentSpeed`
-- `HKQuantityTypeIdentifierStairDescentSpeed`
-- `HKQuantityTypeIdentifierEnvironmentalSoundReduction`
-- `HKQuantityTypeIdentifierBodyMassIndex`
-- `HKCategoryTypeIdentifierAppleStandHour`
-- `HKCategoryTypeIdentifierShortnessOfBreath`
-- `HKCategoryTypeIdentifierFatigue`
+**Workout 同步链路补齐（关键修复）：**
+
+- `HealthKitManager.swift` 新增 `fetchWorkoutSamples()` 方法
+  - 通过 `HKAnchoredObjectQuery` 查询 `HKObjectType.workoutType()`
+  - 将 `HKWorkout` 映射为 `IngestItem`，`kind: "workout"`
+  - 提取 activity_type、duration、total_distance、total_energy_burned、device 信息
+  - 新增 `HKWorkoutActivityType.name` 扩展（约 75 种运动类型映射）
+- `SyncCoordinator.swift` / `RecentSyncedDataView.swift` 的 `shortTypeName` 新增去除 `HKWorkoutActivityType` 前缀
+
+之前 workout 数据不同步的根因：`HealthKitManager` 只查询了 `HKQuantityType` 和 `HKCategoryType`，从未查询过 `HKWorkoutType`。
 
 当前数据库历史类型与 bridge 支持清单对照后，剩余未覆盖项只剩：
 
-- `HKDataTypeSleepDurationGoal`
-
-说明：
-
-- 这不是当前 `sample ingest` 链路里常规处理的 quantity / category 类型
-- 本轮没有把它强行塞进 `POST /ingest` 的现有 schema
+- `HKDataTypeSleepDurationGoal`（仅1条历史数据，优先级极低）
 
 ## 当前关键同步规则
 
@@ -95,7 +93,7 @@
 - 自动同步不是完整的后台补偿方案
 - 用户强杀应用后，不应假设还能继续稳定后台拉起
 - observer 事件可能被系统延迟或合并
-- 还没有 workout / correlation / clinical records 支持
+- 还没有 correlation / clinical records 支持
 - `HKDataTypeSleepDurationGoal` 仍未纳入当前 sample ingest
 
 ## 常用命令

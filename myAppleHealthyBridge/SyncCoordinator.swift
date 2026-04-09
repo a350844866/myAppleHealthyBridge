@@ -870,5 +870,6 @@ final class SyncCoordinator: ObservableObject {
         identifier
             .replacingOccurrences(of: "HKQuantityTypeIdentifier", with: "")
             .replacingOccurrences(of: "HKCategoryTypeIdentifier", with: "")
+            .replacingOccurrences(of: "HKWorkoutActivityType", with: "")
     }
 }

@@ -122,6 +122,19 @@ GET /api/records/recent?device_id=<设备编号>&limit=50
 
 ## 当前支持的数据类型
 
+### Workout 类型
+
+当前已支持 `HKWorkoutType` 的增量同步：
+
+- 通过 `HKAnchoredObjectQuery` 查询 `HKObjectType.workoutType()`
+- 以 `kind: "workout"` 发送到服务端 `POST /ingest`
+- 服务端解析 metadata 中的 activity_type、duration、total_distance、total_energy_burned 等字段
+- 写入 `workouts` 表，使用 hash 去重
+
+支持的 workout activity type 包括约 75 种 Apple 官方定义的运动类型（跑步、骑行、游泳、力量训练等）。
+
+### Quantity / Category 类型
+
 当前优先支持这些 quantity / category 类型：
 
 - `HKQuantityTypeIdentifierHeartRate`
@@ -199,7 +212,6 @@ GET /api/records/recent?device_id=<设备编号>&limit=50
 ## 当前限制
 
 - 自动同步依赖 observer，没有后台补偿同步
-- 还没有 workout 专用 payload
 - 还没有 correlation / clinical records 支持
 - 目标类配置数据如 `HKDataTypeSleepDurationGoal` 仍未纳入当前 sample ingest
 
